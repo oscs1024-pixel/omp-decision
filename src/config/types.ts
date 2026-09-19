@@ -1,3 +1,5 @@
+import type { ReviewerConfig } from "../review/types.js";
+
 export interface DecisionConfig {
   enabled: boolean;
   review: {
@@ -5,6 +7,7 @@ export interface DecisionConfig {
     maxFileContextChars: number;
     maxPayloadChars: number;
     defaultTimeoutMs: number;
+    reviewers: ReviewerConfig[];
   };
 }
 
