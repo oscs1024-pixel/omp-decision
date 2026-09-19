@@ -2,6 +2,11 @@ import type { DecisionConfig } from "./types.js";
 
 export const DEFAULT_CONFIG: Readonly<DecisionConfig> = Object.freeze({
   enabled: true,
+  policy: {
+    enabled: true,
+    builtinRules: true,
+    rules: [],
+  },
   review: {
     enabled: true,
     maxFileContextChars: 16_000,
