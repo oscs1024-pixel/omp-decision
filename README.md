@@ -1,6 +1,6 @@
 # omp-decision
 
-> v0.2.0 · OMP (Oh My Pi) Coding Agent 的决策、工具生命周期审查与策略控制层。
+> v0.2.1 · OMP (Oh My Pi) Coding Agent 的决策、工具生命周期审查与策略控制层。
 
 `omp-decision` 专为 OMP 编码智能体设计，作为 Agent 核心与工具调用之间的独立决策与安全审查总线。它不仅审查调用参数，还能在工具执行前后捕获真实文件系统快照，依据增量 Unified Diff 与围绕代码的自适应收缩上下文进行审计，配合确定性策略引擎（Policy Engine）与 TypeSafe Jev 语义模型，有效拦截危险命令、机密泄漏及违规变更，并生成 Agent 可直接执行的自修复诊断报告。
 
