@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import { loadDecisionConfig } from "../src/config/loader.js";
 import { PolicyEngine } from "../src/policy/engine.js";
+import { JevDecisionProvider } from "../src/providers/jev/provider.js";
 import { DecisionProviderRegistry } from "../src/providers/registry.js";
 import { ReviewRuntime } from "../src/review/runtime.js";
 import { ToolLifecycleRuntime } from "../src/runtime/lifecycle.js";
@@ -10,6 +11,7 @@ import { registerDecisionCommands } from "../src/ui/commands.js";
 export default function ompDecisionExtension(pi: ExtensionAPI): void {
   const state = createRuntimeState(loadDecisionConfig(process.cwd()));
   const providers = new DecisionProviderRegistry();
+  providers.register(new JevDecisionProvider(state.loaded.config.providers.jev));
   let lifecycle = createLifecycle();
 
   function createLifecycle(): ToolLifecycleRuntime {
@@ -25,6 +27,8 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     lifecycle.clear();
     reloadRuntimeState(state, loadDecisionConfig(ctx.cwd));
+    // Provider instances are session-stable; Jev configuration is loaded at extension startup.
+    // A changed provider config takes effect after extension/session reload.
     lifecycle = createLifecycle();
     for (const warning of state.loaded.warnings) {
       if (ctx.hasUI) ctx.ui.notify(`omp-decision: ${warning}`, "warning");
