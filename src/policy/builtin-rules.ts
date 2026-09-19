@@ -9,7 +9,7 @@ const DANGEROUS_SHELL: Array<{ id: string; pattern: RegExp; reason: string }> = 
   { id: "shell.publish", pattern: /(^|[;&|]\s*)(?:npm|pnpm|yarn)\s+publish(?:\s|$)/i, reason: "package publication is an external irreversible action" },
 ];
 
-const SHELL_META = /(?:&&|\|\||[;|<>\n]|\$\(|\x60)/;
+const SHELL_META = /(?:&&|\|\||[;&|<>\r\n`$])/;
 
 const SAFE_SHELL: Array<{ id: string; pattern: RegExp; reason: string }> = [
   { id: "shell.git-status", pattern: /^\s*git\s+status(?:\s+--(?:short|porcelain(?:=v[12])?|branch))*\s*$/i, reason: "git status is read-only" },
