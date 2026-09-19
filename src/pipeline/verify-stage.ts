@@ -88,7 +88,7 @@ export class VerifyStage {
       }
     }
 
-    const changedFiles = diff?.files.map((f) => relative(context.call.cwd, f.path).replace(/\\/g, "/")) ?? context.relativeTargets;
+    const changedFiles = diff?.files\n      .filter((f) => f.kind !== "unchanged")\n      .map((f) => relative(context.call.cwd, f.path).replace(/\\/g, "/"))\n      ?? context.workspaceChanges?.files\n      ?? context.relativeTargets;
     const outcome = await this.#review.after(
       context.call,
       enriched,
