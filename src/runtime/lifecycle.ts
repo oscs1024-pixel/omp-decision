@@ -29,7 +29,6 @@ export class ToolLifecycleRuntime {
   readonly pending = new PendingToolCallStore();
   readonly #review: ReviewRuntime;
   #reviewers: ReviewerConfig[];
-  readonly #policy: PolicyEngine | undefined;
   readonly #audit: AuditRecorder | undefined;
 
   readonly decisionStage: DecisionStage;
@@ -48,7 +47,6 @@ export class ToolLifecycleRuntime {
   ) {
     this.#review = review;
     this.#reviewers = reviewers;
-    this.#policy = policy;
     this.#audit = audit;
 
     this.decisionStage = new DecisionStage(review, reviewers);
@@ -68,40 +66,51 @@ export class ToolLifecycleRuntime {
     signal?: AbortSignal,
     confirm?: ConfirmationHandler,
   ): Promise<BeforeLifecycleResult | undefined> {
-    // Stage 2: Policy pre-flight check (fast path & deterministic hard rules)
-    const policyResult = this.#policy?.evaluate(call);
-    if (policyResult) {
-      this.traceStage.record({ phase: "policy", call, policyDecision: policyResult });
+    // Stage 0: deterministic policy pre-flight (hard rules and safe fast paths)
+    const preflight = this.policyGate.evaluatePreFlight(call);
+    if (preflight) {
+      this.traceStage.record({
+        phase: "policy",
+        call,
+        policyDecision: {
+          action: preflight.action === "allow" ? "allow" : preflight.action === "deny" ? "deny" : "ask",
+          reasonCode: preflight.reasonCode,
+          reason: preflight.reason ?? preflight.reasonCode,
+          ruleId: preflight.ruleId,
+        },
+      });
     }
-    if (policyResult?.action === "deny") {
-      return { block: true, reason: `[${policyResult.reasonCode}] ${policyResult.reason}` };
+    if (preflight?.verdict === "deny") {
+      return { block: true, reason: `[${preflight.reasonCode}] ${preflight.reason ?? "Denied by policy"}` };
     }
-    if (policyResult?.action === "ask") {
-      if (!confirm) return { block: true, reason: policyResult.reason };
-      if (!(await confirm(policyResult.reason))) {
+    if (preflight?.verdict === "confirm") {
+      if (!confirm) return { block: true, reason: preflight.reason };
+      if (!(await confirm(preflight.reason ?? `Allow ${call.toolName}?`))) {
         return { block: true, reason: "User denied omp-decision policy confirmation" };
       }
     }
 
-    // Stage 3: Prepare execution context & validate workspace boundaries
+    // Stage 1: prepare execution context and validate workspace boundaries
     const targets = extractMutationTargets(call.toolName, call.input, call.cwd);
     const relativeTargets = targets.map((t) => relative(call.cwd, t).replace(/\\/g, "/"));
     const afterReviewers = this.#review.select(this.#reviewers, call.toolName, "after", relativeTargets);
 
-    const prep = await this.executeStage.prepare(call, afterReviewers);
+    const prep = await this.executeStage.prepare(call, afterReviewers, undefined, preflight, this.#reviewers);
     if (prep.error) {
       return { block: true, reason: prep.error };
     }
     const execContext = prep.context!;
 
-    // Stage 1: Semantic Decision & Hazard Evaluation
+    // Stage 2: semantic decision and hazard evaluation when pre-flight did not resolve the call
     let decision: PipelineDecision | undefined;
-    if (policyResult?.action !== "allow" && policyResult?.action !== "ask") {
+    if (preflight?.verdict !== "proceed" && preflight?.verdict !== "confirm") {
       decision = await this.decisionStage.evaluate(call, signal, execContext.relativeTargets);
       this.traceStage.record({ phase: "before", call, decision });
 
-      // Stage 2: Policy Gate on Semantic Decision
+      // Stage 3: gate the semantic decision
       const gateResult = this.policyGate.evaluateDecisionGate(call, decision);
+      execContext.decision = decision;
+      execContext.gate = gateResult;
       if (gateResult.verdict === "deny" || gateResult.verdict === "stop") {
         return { block: true, reason: gateResult.reason ?? decision.reason ?? "omp-decision blocked this tool call" };
       }
@@ -120,8 +129,8 @@ export class ToolLifecycleRuntime {
         call,
         decision: {
           action: "allow",
-          reasonCode: policyResult.reasonCode,
-          reason: policyResult.reason,
+          reasonCode: preflight!.reasonCode,
+          reason: preflight!.reason,
           latencyMs: 0,
           provider: "none",
           reviewers: [],
@@ -155,13 +164,13 @@ export class ToolLifecycleRuntime {
     this.pending.delete(toolCallId);
     if (!execContext) return undefined;
 
-    // Stage 3: Capture post-execution snapshots
+    // Stage 4: capture post-execution snapshots
     const postSnapshots = await this.executeStage.capturePost(execContext);
 
-    // Stage 4: Verify
+    // Stage 5: verify actual result and filesystem effects
     const verifyResult = await this.verifyStage.verify(execContext, result, postSnapshots, signal);
 
-    // Stage 5: Trace & Audit Telemetry
+    // Stage 6: trace and audit telemetry
     const auditEntry = this.traceStage.record({
       phase: "after",
       call: execContext.call,
