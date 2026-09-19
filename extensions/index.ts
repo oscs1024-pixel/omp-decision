@@ -10,9 +10,14 @@ import { registerDecisionCommands } from "../src/ui/commands.js";
 
 export default function ompDecisionExtension(pi: ExtensionAPI): void {
   const state = createRuntimeState(loadDecisionConfig(process.cwd()));
-  const providers = new DecisionProviderRegistry();
-  providers.register(new JevDecisionProvider(state.loaded.config.providers.jev));
+  let providers = createProviders();
   let lifecycle = createLifecycle();
+
+  function createProviders(): DecisionProviderRegistry {
+    const registry = new DecisionProviderRegistry();
+    registry.register(new JevDecisionProvider(state.loaded.config.providers.jev));
+    return registry;
+  }
 
   function createLifecycle(): ToolLifecycleRuntime {
     return new ToolLifecycleRuntime(
@@ -27,8 +32,7 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     lifecycle.clear();
     reloadRuntimeState(state, loadDecisionConfig(ctx.cwd));
-    // Provider instances are session-stable; Jev configuration is loaded at extension startup.
-    // A changed provider config takes effect after extension/session reload.
+    providers = createProviders();
     lifecycle = createLifecycle();
     for (const warning of state.loaded.warnings) {
       if (ctx.hasUI) ctx.ui.notify(`omp-decision: ${warning}`, "warning");
