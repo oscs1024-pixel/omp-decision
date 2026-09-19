@@ -70,3 +70,11 @@ test("bundle truncates total payload", () => {
   assert.equal(bundle.truncated, true);
   assert.match(bundle.text, /truncated/);
 });
+
+test("truncated snapshots are not reported as confidently unchanged", () => {
+  const before = { path: "/repo/large.ts", exists: true, content: "same-prefix", truncated: true };
+  const after = { path: "/repo/large.ts", exists: true, content: "same-prefix", truncated: true };
+  const diff = createFileDiff(before, after);
+  assert.equal(diff.kind, "modified");
+  assert.match(diff.unifiedDiff, /diff incomplete/);
+});
