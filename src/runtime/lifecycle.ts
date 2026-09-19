@@ -1,6 +1,7 @@
 import { createDiffBundle } from "../diff/unified.js";
 import { SnapshotManager } from "../diff/snapshot.js";
 import { extractMutationTargets } from "../diff/targets.js";
+import type { PolicyEngine } from "../policy/types.js";
 import type { ReviewerConfig, ToolCall, ToolExecutionResult } from "../review/types.js";
 import { ReviewRuntime } from "../review/runtime.js";
 import { PendingToolCallStore } from "./pending-store.js";
@@ -24,17 +25,20 @@ export class ToolLifecycleRuntime {
   #reviewers: ReviewerConfig[];
   readonly #snapshots: SnapshotManager;
   readonly #maxPayloadChars: number;
+  readonly #policy?: PolicyEngine;
 
   constructor(
     review: ReviewRuntime,
     reviewers: ReviewerConfig[] = [],
     maxFileContextChars = 16_000,
     maxPayloadChars = 24_000,
+    policy?: PolicyEngine,
   ) {
     this.#review = review;
     this.#reviewers = reviewers;
     this.#snapshots = new SnapshotManager(maxFileContextChars);
     this.#maxPayloadChars = maxPayloadChars;
+    this.#policy = policy;
   }
 
   setReviewers(reviewers: ReviewerConfig[]): void {
@@ -46,7 +50,16 @@ export class ToolLifecycleRuntime {
     signal?: AbortSignal,
     confirm?: ConfirmationHandler,
   ): Promise<BeforeLifecycleResult | undefined> {
-    const beforeOutcome = await this.#review.before(call, this.#reviewers, signal);
+    const policy = this.#policy?.evaluate(call);
+    if (policy?.action === "deny") return { block: true, reason: `[${policy.reasonCode}] ${policy.reason}` };
+    if (policy?.action === "ask") {
+      if (!confirm) return { block: true, reason: policy.reason };
+      if (!(await confirm(policy.reason))) return { block: true, reason: "User denied omp-decision policy confirmation" };
+    }
+
+    const beforeOutcome = policy?.action === "allow"
+      ? { action: "allow" as const, reviewers: [] }
+      : await this.#review.before(call, this.#reviewers, signal);
     if (beforeOutcome.action === "deny") {
       return { block: true, reason: beforeOutcome.reason ?? "omp-decision blocked this tool call" };
     }
