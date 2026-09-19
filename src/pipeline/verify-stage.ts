@@ -27,7 +27,7 @@ export class VerifyStage {
     if (result.isError) {
       return {
         status: "skipped",
-        reviewers: context.afterReviewers.map((r) => ({
+        reviewers: context.initialAfterReviewers.map((r) => ({
           reviewerId: r.id,
           reviewerName: r.name,
           provider: r.provider,
@@ -60,7 +60,7 @@ export class VerifyStage {
       if (diff.files.length > 0 && diff.files.every((f) => f.kind === "unchanged")) {
         return {
           status: "skipped",
-          reviewers: context.afterReviewers.map((r) => ({
+          reviewers: context.initialAfterReviewers.map((r) => ({
             reviewerId: r.id,
             reviewerName: r.name,
             provider: r.provider,
