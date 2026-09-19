@@ -1,7 +1,9 @@
+import { relative } from "node:path";
+import { extractMutationTargets } from "../diff/targets.js";
+import { globToRegExp } from "../review/selector.js";
 import type { ToolCall } from "../review/types.js";
 import { compileUserRule, evaluateBuiltinPolicy } from "./builtin-rules.js";
 import type { PolicyConfig, PolicyDecision, PolicyEngine as PolicyEngineContract, PolicyRule } from "./types.js";
-
 function toolMatches(rule: PolicyRule, toolName: string): boolean {
   return rule.enabled && (rule.tools.includes("*") || rule.tools.includes(toolName));
 }
@@ -34,11 +36,26 @@ export class PolicyEngine implements PolicyEngineContract {
     const matched = this.#config.rules.filter((rule) => userRuleMatches(rule, call));
     const deny = matched.find((rule) => rule.action === "deny");
     if (deny) return decisionFromRule(deny);
+
+    if (this.#config.protectedPaths && this.#config.protectedPaths.length > 0) {
+      const targets = extractMutationTargets(call.toolName, call.input, call.cwd);
+      if (targets.length > 0) {
+        const regexes = this.#config.protectedPaths.map(globToRegExp);
+        const hit = targets.find((target) => {
+          const rel = relative(call.cwd, target).replace(/\\/g, "/").replace(/^\.?\//, "");
+          return regexes.some((re) => re.test(rel));
+        });
+        if (hit) {
+          const rel = relative(call.cwd, hit).replace(/\\/g, "/");
+          return { action: "ask", reasonCode: "protected_path", reason: `Target file is protected by policy: ${rel}` };
+        }
+      }
+    }
+
     const ask = matched.find((rule) => rule.action === "ask");
     if (ask) return decisionFromRule(ask);
     const allow = matched.find((rule) => rule.action === "allow");
     if (allow) return decisionFromRule(allow);
-
     if (this.#config.builtinRules) {
       const builtin = evaluateBuiltinPolicy(call.toolName, call.input);
       if (builtin) return builtin;

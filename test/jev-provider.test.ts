@@ -59,3 +59,36 @@ test("availability requires enabled config and configured client", async () => {
   assert.equal(await new JevDecisionProvider(config, new StubClient(response, false)).isAvailable(), false);
   assert.equal(await new JevDecisionProvider({ ...config, enabled: false }, new StubClient(response, true)).isAvailable(), false);
 });
+
+test("project rules are injected into review state and parallel findings are extracted", async () => {
+  const client = new StubClient({
+    answers: {
+      decision: { type: "choice", value: "reject", confidence: 0.92 },
+      category: { type: "choice", value: "credential_exposure", confidence: 0.90 },
+      severity: { type: "choice", value: "critical", confidence: 0.95 },
+    },
+    model: "jev-1.12",
+    elapsedMs: 2,
+  });
+  const provider = new JevDecisionProvider(config, client);
+  const result = await provider.decide({
+    phase: "after",
+    toolCallId: "3",
+    toolName: "edit",
+    input: { path: "src/auth.ts" },
+    rules: "# Security Rules\nNever log tokens.",
+    reviewer: { id: "sec", name: "Security Reviewer" },
+    result: {
+      content: [],
+      details: undefined,
+      isError: false,
+    },
+  });
+  assert.equal(result.action, "reject");
+  assert.equal(client.lastState?.projectRules, "# Security Rules\nNever log tokens.");
+  assert.equal((client.lastState?.reviewer as Record<string, unknown>).id, "sec");
+  assert.ok(result.findings && result.findings.length > 0);
+  assert.equal(result.findings[0]?.severity, "critical");
+  assert.equal(result.findings[0]?.category, "credential_exposure");
+  assert.match(result.reason ?? "", /credential_exposure/);
+});

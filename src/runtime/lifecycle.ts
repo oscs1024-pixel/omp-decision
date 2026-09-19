@@ -1,11 +1,15 @@
-import type { AuditRecorder } from "../audit/recorder.js";
-import { resolveMutationTarget } from "../diff/boundary.js";
-import { createDiffBundle } from "../diff/unified.js";
-import { SnapshotManager } from "../diff/snapshot.js";
+import { relative } from "node:path";
 import { extractMutationTargets } from "../diff/targets.js";
+import { DecisionStage } from "../pipeline/decision-stage.js";
+import { ExecuteStage } from "../pipeline/execute-stage.js";
+import { PolicyGateStage } from "../pipeline/policy-gate-stage.js";
+import { TraceEvalStage } from "../pipeline/trace-eval-stage.js";
+import type { PipelineDecision } from "../pipeline/types.js";
+import { VerifyStage } from "../pipeline/verify-stage.js";
 import type { PolicyEngine } from "../policy/types.js";
+import type { ReviewRuntime } from "../review/runtime.js";
 import type { ReviewerConfig, ToolCall, ToolExecutionResult } from "../review/types.js";
-import { ReviewRuntime } from "../review/runtime.js";
+import type { AuditRecorder } from "../audit/recorder.js";
 import { PendingToolCallStore } from "./pending-store.js";
 
 export interface BeforeLifecycleResult {
@@ -25,10 +29,14 @@ export class ToolLifecycleRuntime {
   readonly pending = new PendingToolCallStore();
   readonly #review: ReviewRuntime;
   #reviewers: ReviewerConfig[];
-  readonly #snapshots: SnapshotManager;
-  readonly #maxPayloadChars: number;
-  readonly #policy?: PolicyEngine;
-  readonly #audit?: AuditRecorder;
+  readonly #policy: PolicyEngine | undefined;
+  readonly #audit: AuditRecorder | undefined;
+
+  readonly decisionStage: DecisionStage;
+  readonly policyGate: PolicyGateStage;
+  readonly executeStage: ExecuteStage;
+  readonly verifyStage: VerifyStage;
+  readonly traceStage: TraceEvalStage;
 
   constructor(
     review: ReviewRuntime,
@@ -40,14 +48,19 @@ export class ToolLifecycleRuntime {
   ) {
     this.#review = review;
     this.#reviewers = reviewers;
-    this.#snapshots = new SnapshotManager(maxFileContextChars);
-    this.#maxPayloadChars = maxPayloadChars;
     this.#policy = policy;
     this.#audit = audit;
+
+    this.decisionStage = new DecisionStage(review, reviewers);
+    this.policyGate = new PolicyGateStage(policy);
+    this.executeStage = new ExecuteStage(maxFileContextChars);
+    this.verifyStage = new VerifyStage(review, maxPayloadChars, maxFileContextChars);
+    this.traceStage = new TraceEvalStage(audit);
   }
 
   setReviewers(reviewers: ReviewerConfig[]): void {
     this.#reviewers = reviewers;
+    this.decisionStage.setReviewers(reviewers);
   }
 
   async before(
@@ -55,77 +68,131 @@ export class ToolLifecycleRuntime {
     signal?: AbortSignal,
     confirm?: ConfirmationHandler,
   ): Promise<BeforeLifecycleResult | undefined> {
-    const policy = this.#policy?.evaluate(call);
-    if (policy) this.#audit?.policy(call, policy);
-    if (policy?.action === "deny") return { block: true, reason: `[${policy.reasonCode}] ${policy.reason}` };
-    if (policy?.action === "ask") {
-      if (!confirm) return { block: true, reason: policy.reason };
-      if (!(await confirm(policy.reason))) return { block: true, reason: "User denied omp-decision policy confirmation" };
+    // Stage 2: Policy pre-flight check (fast path & deterministic hard rules)
+    const policyResult = this.#policy?.evaluate(call);
+    if (policyResult) {
+      this.traceStage.record({ phase: "policy", call, policyDecision: policyResult });
     }
-
-    const beforeOutcome = policy?.action === "allow"
-      ? { action: "allow" as const, reviewers: [] }
-      : await this.#review.before(call, this.#reviewers, signal);
-    this.#audit?.before(call, beforeOutcome);
-    if (beforeOutcome.action === "deny") {
-      return { block: true, reason: beforeOutcome.reason ?? "omp-decision blocked this tool call" };
+    if (policyResult?.action === "deny") {
+      return { block: true, reason: `[${policyResult.reasonCode}] ${policyResult.reason}` };
     }
-
-    if (beforeOutcome.action === "ask") {
-      if (!confirm) {
-        return { block: true, reason: beforeOutcome.reason ?? "omp-decision requires interactive confirmation" };
-      }
-      const approved = await confirm(beforeOutcome.reason ?? `Allow ${call.toolName}?`);
-      if (!approved) {
-        return { block: true, reason: "User denied omp-decision confirmation" };
+    if (policyResult?.action === "ask") {
+      if (!confirm) return { block: true, reason: policyResult.reason };
+      if (!(await confirm(policyResult.reason))) {
+        return { block: true, reason: "User denied omp-decision policy confirmation" };
       }
     }
 
-    const afterReviewers = this.#review.select(this.#reviewers, call.toolName, "after");
-    const targets = afterReviewers.length > 0 ? extractMutationTargets(call.toolName, call.input, call.cwd) : [];
-    const resolvedTargets = await Promise.all(targets.map((target) => resolveMutationTarget(call.cwd, target)));
-    const escaped = resolvedTargets.find((target) => !target.withinWorkspace);
-    if (escaped) {
-      return { block: true, reason: `[workspace_boundary] mutation target escapes workspace: ${escaped.requestedPath}` };
+    // Stage 3: Prepare execution context & validate workspace boundaries
+    const targets = extractMutationTargets(call.toolName, call.input, call.cwd);
+    const relativeTargets = targets.map((t) => relative(call.cwd, t).replace(/\\/g, "/"));
+    const afterReviewers = this.#review.select(this.#reviewers, call.toolName, "after", relativeTargets);
+
+    const prep = await this.executeStage.prepare(call, afterReviewers);
+    if (prep.error) {
+      return { block: true, reason: prep.error };
     }
-    const canonicalTargets = resolvedTargets.map((target) => target.canonicalPath);
-    const snapshots = canonicalTargets.length > 0 ? await this.#snapshots.captureMany(canonicalTargets) : undefined;
+    const execContext = prep.context!;
+
+    // Stage 1: Semantic Decision & Hazard Evaluation
+    let decision: PipelineDecision | undefined;
+    if (policyResult?.action !== "allow") {
+      decision = await this.decisionStage.evaluate(call, signal, execContext.relativeTargets);
+      this.traceStage.record({ phase: "before", call, decision });
+
+      // Stage 2: Policy Gate on Semantic Decision
+      const gateResult = this.policyGate.evaluateDecisionGate(call, decision);
+      if (gateResult.verdict === "deny" || gateResult.verdict === "stop") {
+        return { block: true, reason: gateResult.reason ?? decision.reason ?? "omp-decision blocked this tool call" };
+      }
+      if (gateResult.verdict === "confirm") {
+        if (!confirm) {
+          return { block: true, reason: gateResult.reason ?? decision.reason ?? "omp-decision requires interactive confirmation" };
+        }
+        const approved = await confirm(gateResult.reason ?? `Allow ${call.toolName}?`);
+        if (!approved) {
+          return { block: true, reason: "User denied omp-decision confirmation" };
+        }
+      }
+    } else {
+      this.traceStage.record({
+        phase: "before",
+        call,
+        decision: {
+          action: "allow",
+          reasonCode: policyResult.reasonCode,
+          reason: policyResult.reason,
+          latencyMs: 0,
+          provider: "none",
+          reviewers: [],
+        },
+      });
+    }
+
+    this.executeStage.save(execContext);
+
+    // Keep backwards-compatible pending store in sync
     this.pending.set({
       call,
-      beforeOutcome,
-      afterReviewers,
-      ...(snapshots === undefined ? {} : { snapshots }),
+      beforeOutcome: {
+        action: decision?.action ?? "allow",
+        reason: decision?.reason,
+        reviewers: decision?.reviewers ?? [],
+      },
+      afterReviewers: execContext.afterReviewers,
+      ...(execContext.preSnapshots ? { snapshots: execContext.preSnapshots } : {}),
     });
+
     return undefined;
   }
 
-  async after(toolCallId: string, result: ToolExecutionResult, signal?: AbortSignal): Promise<AfterLifecycleResult | undefined> {
-    const pending = this.pending.take(toolCallId);
-    if (!pending) return undefined;
+  async after(
+    toolCallId: string,
+    result: ToolExecutionResult,
+    signal?: AbortSignal,
+  ): Promise<AfterLifecycleResult | undefined> {
+    const execContext = this.executeStage.take(toolCallId);
+    this.pending.delete(toolCallId);
+    if (!execContext) return undefined;
 
-    let enriched = result;
-    if (pending.snapshots && pending.snapshots.size > 0 && !result.isError) {
-      const afterSnapshots = await this.#snapshots.captureMany([...pending.snapshots.keys()]);
-      const diff = createDiffBundle(pending.snapshots, afterSnapshots, this.#maxPayloadChars);
-      enriched = { ...result, reviewContext: { ...result.reviewContext, diff } };
-    }
+    // Stage 3: Capture post-execution snapshots
+    const postSnapshots = await this.executeStage.capturePost(execContext);
 
-    const outcome = await this.#review.after(pending.call, enriched, pending.afterReviewers, signal);
-    const audit = this.#audit?.after(pending.call, enriched, outcome);
-    if (!outcome.diagnostic) return undefined;
+    // Stage 4: Verify
+    const verifyResult = await this.verifyStage.verify(execContext, result, postSnapshots, signal);
+
+    // Stage 5: Trace & Audit Telemetry
+    const auditEntry = this.traceStage.record({
+      phase: "after",
+      call: execContext.call,
+      verify: verifyResult,
+      diff: verifyResult.diff,
+    });
+
+    if (!verifyResult.diagnostic) return undefined;
 
     return {
-      content: [...result.content, { type: "text", text: outcome.diagnostic }],
-      details: mergeDetails(result.details, { ompDecision: { ...outcome, auditId: audit?.id } }),
+      content: [...result.content, { type: "text", text: verifyResult.diagnostic }],
+      details: mergeDetails(result.details, {
+        ompDecision: {
+          status: verifyResult.status,
+          reviewers: verifyResult.reviewers,
+          findings: verifyResult.findings,
+          diagnostic: verifyResult.diagnostic,
+          auditId: auditEntry?.id,
+        },
+      }),
       isError: result.isError,
     };
   }
 
   discard(toolCallId: string): void {
+    this.executeStage.delete(toolCallId);
     this.pending.delete(toolCallId);
   }
 
   clear(): void {
+    this.executeStage.clear();
     this.pending.clear();
   }
 }

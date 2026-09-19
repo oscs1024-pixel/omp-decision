@@ -16,8 +16,15 @@ export interface FileDiff {
   truncated: boolean;
 }
 
+export interface BoundedContext {
+  path: string;
+  context: string;
+  window: number;
+}
+
 export interface DiffBundle {
   files: FileDiff[];
   text: string;
   truncated: boolean;
+  contexts?: BoundedContext[] | undefined;
 }

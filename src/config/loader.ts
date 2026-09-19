@@ -51,6 +51,15 @@ function parseReviewer(value: unknown, index: number, source: string, warnings: 
   } else if (value.timeoutMs !== undefined) {
     warnings.push(`${source}: review.reviewers[${index}].timeoutMs must be a positive integer`);
   }
+  if (Array.isArray(value.filePatterns)) {
+    reviewer.filePatterns = value.filePatterns.filter((p): p is string => typeof p === "string" && p.length > 0);
+  }
+  if (Array.isArray(value.excludePatterns)) {
+    reviewer.excludePatterns = value.excludePatterns.filter((p): p is string => typeof p === "string" && p.length > 0);
+  }
+  if (Array.isArray(value.rulesFiles)) {
+    reviewer.rulesFiles = value.rulesFiles.filter((p): p is string => typeof p === "string" && p.length > 0);
+  }
   return reviewer;
 }
 
@@ -117,6 +126,13 @@ function applyConfig(base: DecisionConfig, raw: unknown, source: string, warning
         enabled: typeof jev?.enabled === "boolean" ? jev.enabled : base.providers.jev.enabled,
         allowThreshold: probability(jev?.allowThreshold, base.providers.jev.allowThreshold, `${source}: providers.jev.allowThreshold`, warnings),
         denyThreshold: probability(jev?.denyThreshold, base.providers.jev.denyThreshold, `${source}: providers.jev.denyThreshold`, warnings),
+        dangerDenyThreshold: probability(jev?.dangerDenyThreshold, base.providers.jev.dangerDenyThreshold ?? 0.45, `${source}: providers.jev.dangerDenyThreshold`, warnings),
+        stopConfidence: probability(jev?.stopConfidence, base.providers.jev.stopConfidence ?? 0.30, `${source}: providers.jev.stopConfidence`, warnings),
+        toolThresholds: isRecord(jev?.toolThresholds) ? {
+          readonly: probability(jev.toolThresholds.readonly, base.providers.jev.toolThresholds?.readonly ?? 0.50, `${source}: providers.jev.toolThresholds.readonly`, warnings),
+          mutation: probability(jev.toolThresholds.mutation, base.providers.jev.toolThresholds?.mutation ?? 0.65, `${source}: providers.jev.toolThresholds.mutation`, warnings),
+          execution: probability(jev.toolThresholds.execution, base.providers.jev.toolThresholds?.execution ?? 0.75, `${source}: providers.jev.toolThresholds.execution`, warnings),
+        } : base.providers.jev.toolThresholds ? { ...base.providers.jev.toolThresholds } : undefined,
         ...(typeof jev?.model === "string" && jev.model.trim() ? { model: jev.model.trim() } : base.providers.jev.model ? { model: base.providers.jev.model } : {}),
       },
     },
@@ -124,6 +140,9 @@ function applyConfig(base: DecisionConfig, raw: unknown, source: string, warning
       enabled: typeof policy?.enabled === "boolean" ? policy.enabled : base.policy.enabled,
       builtinRules: typeof policy?.builtinRules === "boolean" ? policy.builtinRules : base.policy.builtinRules,
       rules: policyRules ?? base.policy.rules.map((rule) => ({ ...rule, tools: [...rule.tools] })),
+      protectedPaths: Array.isArray(policy?.protectedPaths)
+        ? policy.protectedPaths.filter((p): p is string => typeof p === "string" && p.length > 0)
+        : base.policy.protectedPaths ? [...base.policy.protectedPaths] : undefined,
     },
     review: {
       enabled: typeof review?.enabled === "boolean" ? review.enabled : base.review.enabled,

@@ -14,12 +14,11 @@ test("ranking prefers tool-name matches over descriptions", () => {
   assert.equal(matches[0]?.name, "git_diff");
 });
 
-test("tool discovery excludes zero-score candidates", () => {
+test("tool discovery excludes zero-score candidates", async () => {
   const runtime = new DiscoveryRuntime({ list: () => [{ name: "read" }, { name: "bash" }, { name: "grep" }] });
-  const result = runtime.findTools("search grep text");
+  const result = await runtime.findTools("search grep text");
   assert.deepEqual(result.matches.map((item) => item.name), ["grep"]);
 });
-
 test("skill discovery reads project SKILL frontmatter", async () => {
   const root = mkdtempSync(join(tmpdir(), "omp-decision-skill-"));
   const skill = join(root, "review-code");
@@ -29,4 +28,29 @@ test("skill discovery reads project SKILL frontmatter", async () => {
   const result = await runtime.findSkills("security review", [root]);
   assert.equal(result.matches[0]?.name, "review-code");
   assert.equal(result.matches[0]?.source, join(skill, "SKILL.md"));
+});
+
+test("two-stage discovery uses Jev semantic reranking when configured", async () => {
+  const stubClient = {
+    isConfigured: () => true,
+    evaluate: async () => ({
+      answers: {
+        decision: {
+          type: "choice" as const,
+          value: "read",
+          confidence: 0.95,
+        },
+      },
+      model: "jev-1.12",
+      elapsedMs: 2,
+    }),
+  };
+  const runtime = new DiscoveryRuntime(
+    { list: () => [{ name: "bash", description: "run commands" }, { name: "read", description: "read file contents" }] },
+    stubClient,
+  );
+  const result = await runtime.findTools("inspect file content", 5);
+  assert.equal(result.strategy, "semantic");
+  assert.equal(result.matches[0]?.name, "read");
+  assert.match(result.matches[0]?.reasons.join(" ") ?? "", /selected by Jev semantic model/);
 });

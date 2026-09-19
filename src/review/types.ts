@@ -1,3 +1,5 @@
+import type { DiffBundle } from "../diff/types.js";
+
 export type ReviewTrigger = "before" | "after" | "both";
 export type FailureMode = "open" | "closed" | "ask";
 
@@ -9,7 +11,10 @@ export interface ReviewerConfig {
   trigger: ReviewTrigger;
   provider: string;
   failureMode: FailureMode;
-  timeoutMs?: number;
+  timeoutMs?: number | undefined;
+  filePatterns?: string[] | undefined;
+  excludePatterns?: string[] | undefined;
+  rulesFiles?: string[] | undefined;
 }
 
 export interface ToolCall {
@@ -25,8 +30,14 @@ export interface ToolExecutionResult {
   details: unknown;
   isError: boolean;
   reviewContext?: {
-    diff?: import("../diff/types.js").DiffBundle;
-  };
+    diff?: DiffBundle | undefined;
+  } | undefined;
+}
+export interface ReviewFinding {
+  severity: "info" | "warning" | "error" | "critical";
+  category?: string | undefined;
+  message: string;
+  path?: string | undefined;
 }
 
 export interface ReviewerResult {
@@ -35,19 +46,22 @@ export interface ReviewerResult {
   phase: "before" | "after";
   status: "allowed" | "denied" | "asked" | "passed" | "rejected" | "failed" | "skipped";
   reasonCode: string;
-  reason?: string;
-  confidence?: number;
+  reason?: string | undefined;
+  confidence?: number | undefined;
   durationMs: number;
+  findings?: ReviewFinding[] | undefined;
+  tokens?: number | undefined;
+  costUsd?: number | undefined;
 }
 
 export interface BeforeReviewOutcome {
   action: "allow" | "deny" | "ask";
-  reason?: string;
+  reason?: string | undefined;
   reviewers: ReviewerResult[];
 }
 
 export interface AfterReviewOutcome {
   status: "passed" | "rejected" | "failed" | "skipped";
   reviewers: ReviewerResult[];
-  diagnostic?: string;
+  diagnostic?: string | undefined;
 }

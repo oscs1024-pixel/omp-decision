@@ -4,6 +4,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { buildBoundedFileContext, extractChangedLineRanges } from "../src/diff/context-builder.js";
 import { createDiffBundle, createFileDiff } from "../src/diff/unified.js";
 import { SnapshotManager } from "../src/diff/snapshot.js";
 import { extractMutationTargets } from "../src/diff/targets.js";
@@ -17,6 +18,12 @@ test("edit extracts nested multi-file targets", () => {
     extractMutationTargets("edit", { edits: [{ path: "a.ts" }, { filePath: "b.ts" }] }, "/repo").sort(),
     ["/repo/a.ts", "/repo/b.ts"],
   );
+});
+
+test("edit extracts targets from OMP hashline patch syntax and MV", () => {
+  const patch = "[src/auth.ts#A1B2]\nPUT 1.=2:\n+code\nMV src/new-auth.ts\n[lib/util.ts#C3D4]\nPUT <1:\n+import";
+  const targets = extractMutationTargets("edit", { input: patch }, "/repo");
+  assert.deepEqual(targets.sort(), ["/repo/lib/util.ts", "/repo/src/auth.ts", "/repo/src/new-auth.ts"]);
 });
 
 test("CRLF and LF-only content do not produce a diff", () => {
@@ -95,4 +102,16 @@ test("large-file changes after the public prefix produce real bounded hunks", as
   assert.equal(diff.before.fullContent, undefined);
   assert.equal(diff.after.fullContent, undefined);
   assert.ok(diff.unifiedDiff.length < prefix.length);
+});
+
+test("bounded context extracts lines around diff hunks", () => {
+  const diff = "--- a/x.ts\n+++ b/x.ts\n@@ -50,3 +50,4 @@\n-old\n+new";
+  const ranges = extractChangedLineRanges(diff);
+  assert.deepEqual(ranges, [{ start: 50, end: 53 }]);
+
+  const content = Array.from({ length: 200 }, (_, i) => `content line ${i + 1}`).join("\n");
+  const snap = { path: "x.ts", exists: true, content, truncated: false };
+  const ctx = buildBoundedFileContext(snap, diff, 5000);
+  assert.ok(ctx.context.includes("50: content line 50"));
+  assert.ok(ctx.context.includes("--- lines"));
 });

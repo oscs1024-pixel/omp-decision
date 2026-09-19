@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { buildBoundedFileContext } from "./context-builder.js";
 import type { DiffBundle, FileDiff, FileSnapshot } from "./types.js";
 
 interface Op {
@@ -114,7 +115,12 @@ function publicSnapshot(snapshot: FileSnapshot): FileSnapshot {
   return safe;
 }
 
-export function createDiffBundle(before: Map<string, FileSnapshot>, after: Map<string, FileSnapshot>, maxChars: number): DiffBundle {
+export function createDiffBundle(
+  before: Map<string, FileSnapshot>,
+  after: Map<string, FileSnapshot>,
+  maxChars: number,
+  maxContextChars = 16_000,
+): DiffBundle {
   const paths = new Set([...before.keys(), ...after.keys()]);
   const files = [...paths].map((path) => createFileDiff(
     before.get(path) ?? { path, exists: false, content: "", truncated: false },
@@ -123,5 +129,14 @@ export function createDiffBundle(before: Map<string, FileSnapshot>, after: Map<s
   const meaningful = files.filter((file) => file.kind !== "unchanged");
   const raw = meaningful.map((file) => `# ${file.path}\n${file.unifiedDiff}`).join("\n\n");
   const truncated = raw.length > maxChars;
-  return { files, text: truncated ? raw.slice(0, maxChars) + "\n# ... diff truncated ..." : raw, truncated };
+  const contexts = meaningful.map((file) => {
+    const afterSnap = after.get(file.path) ?? file.after;
+    return buildBoundedFileContext(afterSnap, file.unifiedDiff, maxContextChars);
+  });
+  return {
+    files,
+    text: truncated ? raw.slice(0, maxChars) + "\n# ... diff truncated ..." : raw,
+    truncated,
+    contexts,
+  };
 }

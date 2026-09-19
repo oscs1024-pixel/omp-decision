@@ -1,7 +1,7 @@
 export interface DiscoveryCandidate {
   name: string;
-  description?: string;
-  source?: string;
+  description?: string | undefined;
+  source?: string | undefined;
 }
 
 export interface DiscoveryMatch extends DiscoveryCandidate {
@@ -12,5 +12,5 @@ export interface DiscoveryMatch extends DiscoveryCandidate {
 export interface DiscoveryResult {
   query: string;
   matches: DiscoveryMatch[];
-  strategy: "lexical";
+  strategy: "lexical" | "semantic";
 }

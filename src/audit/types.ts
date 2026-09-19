@@ -5,9 +5,11 @@ export interface AuditReviewer {
   reviewerName: string;
   status: string;
   reasonCode: string;
-  reason?: string;
-  confidence?: number;
+  reason?: string | undefined;
+  confidence?: number | undefined;
   durationMs: number;
+  tokens?: number | undefined;
+  costUsd?: number | undefined;
 }
 
 export interface AuditEntry {
@@ -19,14 +21,16 @@ export interface AuditEntry {
   phase: AuditPhase;
   decision: string;
   reasonCode: string;
-  reason?: string;
-  ruleId?: string;
-  durationMs?: number;
-  reviewers?: AuditReviewer[];
+  reason?: string | undefined;
+  ruleId?: string | undefined;
+  durationMs?: number | undefined;
+  tokens?: number | undefined;
+  costUsd?: number | undefined;
+  reviewers?: AuditReviewer[] | undefined;
   diff?: {
     files: number;
     changedFiles: number;
     truncated: boolean;
     kinds: Record<string, number>;
-  };
+  } | undefined;
 }

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.omp/
+*开发设计文档*
+*.local

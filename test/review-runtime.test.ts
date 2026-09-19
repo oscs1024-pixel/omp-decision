@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { loadReviewerRules } from "../src/review/rules.js";
 import { FakeDecisionProvider } from "../src/providers/fake.js";
 import { DecisionProviderRegistry } from "../src/providers/registry.js";
 import { ReviewRuntime } from "../src/review/runtime.js";
@@ -97,4 +101,30 @@ test("after uncertain decision is resolved through failureMode", async () => {
   assert.equal(outcome.status, "rejected");
   assert.equal(outcome.reviewers[0]?.reasonCode, "provider_uncertain");
   assert.match(outcome.diagnostic ?? "", /not enough evidence/);
+});
+
+test("filePatterns only matches matching targets", () => {
+  const runtime = new ReviewRuntime(new DecisionProviderRegistry(), 1000);
+  const rev = reviewer({ tools: ["edit"], filePatterns: ["src/**/*.ts"] });
+  assert.equal(runtime.select([rev], "edit", "after", ["src/index.ts"]).length, 1);
+  assert.equal(runtime.select([rev], "edit", "after", ["docs/index.md"]).length, 0);
+  assert.equal(runtime.select([rev], "edit", "after").length, 0);
+});
+
+test("excludePatterns excludes matching targets", () => {
+  const runtime = new ReviewRuntime(new DecisionProviderRegistry(), 1000);
+  const rev = reviewer({ tools: ["edit"], filePatterns: ["src/**/*.ts"], excludePatterns: ["**/*.test.ts"] });
+  assert.equal(runtime.select([rev], "edit", "after", ["src/index.ts"]).length, 1);
+  assert.equal(runtime.select([rev], "edit", "after", ["src/index.test.ts"]).length, 0);
+});
+
+test("loadReviewerRules reads and concatenates markdown rule files", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-rules-"));
+  mkdirSync(join(root, ".omp", "rules"), { recursive: true });
+  writeFileSync(join(root, ".omp", "rules", "security.md"), "# Security\nNo logging credentials.");
+  writeFileSync(join(root, ".omp", "rules", "arch.md"), "# Architecture\nLayered design.");
+
+  const rules = await loadReviewerRules(root, [".omp/rules/security.md", ".omp/rules/arch.md"]);
+  assert.ok(rules && rules.includes("No logging credentials."));
+  assert.ok(rules && rules.includes("Layered design."));
 });

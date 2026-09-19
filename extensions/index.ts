@@ -1,6 +1,7 @@
+import { join } from "node:path";
 import type { ExtensionAPI, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import { AuditRecorder } from "../src/audit/recorder.js";
-import { InMemoryAuditStore } from "../src/audit/store.js";
+import { FileAuditStore } from "../src/audit/store.js";
 import { loadDecisionConfig } from "../src/config/loader.js";
 import { registerDiscoveryTools } from "../src/discovery/tools.js";
 import { PolicyEngine } from "../src/policy/engine.js";
@@ -13,7 +14,7 @@ import { registerDecisionCommands } from "../src/ui/commands.js";
 
 export default function ompDecisionExtension(pi: ExtensionAPI): void {
   const state = createRuntimeState(loadDecisionConfig(process.cwd()));
-  const auditStore = new InMemoryAuditStore();
+  const auditStore = new FileAuditStore(join(process.cwd(), ".omp", "decision", "audit.jsonl"));
   const audit = new AuditRecorder(auditStore);
   let providers = createProviders();
   let lifecycle = createLifecycle();
@@ -38,6 +39,7 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     lifecycle.clear();
     audit.startSession();
+    auditStore.setFilePath(join(ctx.cwd, ".omp", "decision", "audit.jsonl"));
     reloadRuntimeState(state, loadDecisionConfig(ctx.cwd));
     providers = createProviders();
     lifecycle = createLifecycle();
@@ -47,23 +49,23 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    if (!state.enabled || !state.loaded.config.review.enabled) return;
+    if (!state.enabled || (!state.loaded.config.review.enabled && !state.loaded.config.policy.enabled)) return;
     return lifecycle.before(
       {
         toolCallId: event.toolCallId,
         toolName: event.toolName,
-        input: event.input,
+        input: event.input as Record<string, unknown>,
         cwd: ctx.cwd,
         timestamp: Date.now(),
       },
-      ctx.signal,
+      undefined,
       ctx.hasUI
-        ? (message) => ctx.ui.confirm("omp-decision review", message, { signal: ctx.signal })
+        ? (message) => ctx.ui.confirm("omp-decision review", message)
         : undefined,
     );
   });
 
-  pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
+  pi.on("tool_result", async (event: ToolResultEvent, _ctx) => {
     if (!state.enabled || !state.loaded.config.review.enabled) {
       lifecycle.discard(event.toolCallId);
       return;
@@ -71,7 +73,7 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
     const replacement = await lifecycle.after(
       event.toolCallId,
       { content: event.content, details: event.details, isError: event.isError },
-      ctx.signal,
+      undefined,
     );
     if (!replacement) return;
     return {

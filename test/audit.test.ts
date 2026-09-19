@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { AuditRecorder } from "../src/audit/recorder.js";
-import { InMemoryAuditStore } from "../src/audit/store.js";
+import { FileAuditStore, InMemoryAuditStore } from "../src/audit/store.js";
 import type { ToolCall } from "../src/review/types.js";
 
 const call: ToolCall = { toolCallId: "tc1", toolName: "write", input: {}, cwd: "/repo", timestamp: 1 };
@@ -29,4 +33,17 @@ test("after audit records diff metadata but not diff contents", () => {
   }, { status: "passed", reviewers: [] });
   assert.equal(entry.diff?.changedFiles, 1);
   assert.equal(JSON.stringify(entry).includes("SECRET DIFF BODY"), false);
+});
+
+test("FileAuditStore persists entries as JSONL", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "omp-decision-audit-"));
+  const filePath = join(dir, "sub", "audit.jsonl");
+  const store = new FileAuditStore(filePath, 10);
+  const recorder = new AuditRecorder(store);
+  const entry = recorder.policy(call, { action: "deny", reasonCode: "blocked", reason: "test block" });
+  assert.equal(store.get(entry.id)?.decision, "deny");
+  await store.flush();
+  const content = readFileSync(filePath, "utf8");
+  assert.ok(content.includes(entry.id));
+  assert.ok(content.includes("blocked"));
 });

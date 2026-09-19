@@ -3,7 +3,9 @@ import { isAbsolute, resolve } from "node:path";
 function asPath(value: unknown, cwd: string): string | undefined {
   if (typeof value !== "string" || value.length === 0) return undefined;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return undefined;
-  return isAbsolute(value) ? value : resolve(cwd, value);
+  const clean = value.replace(/:[0-9]+(?:-[0-9]+)?$|:[a-z]+$|#[a-f0-9]+$/i, "").trim();
+  if (!clean) return undefined;
+  return isAbsolute(clean) ? clean : resolve(cwd, clean);
 }
 
 export function extractMutationTargets(toolName: string, input: Record<string, unknown>, cwd: string): string[] {
@@ -14,6 +16,20 @@ export function extractMutationTargets(toolName: string, input: Record<string, u
   if (toolName !== "edit") return [];
 
   const found = new Set<string>();
+
+  if (typeof input.input === "string") {
+    const sectionRegex = /^\[([^\s#\]]+)(?:#[a-zA-Z0-9]+)?\]/gm;
+    let m: RegExpExecArray | null;
+    while ((m = sectionRegex.exec(input.input)) !== null) {
+      const path = asPath(m[1]!, cwd);
+      if (path) found.add(path);
+    }
+    const mvRegex = /^\s*MV\s+([^\s\n\r]+)/gm;
+    while ((m = mvRegex.exec(input.input)) !== null) {
+      const path = asPath(m[1]!, cwd);
+      if (path) found.add(path);
+    }
+  }
   const visit = (value: unknown, depth: number): void => {
     if (depth > 5) return;
     if (Array.isArray(value)) {

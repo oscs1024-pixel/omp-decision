@@ -24,11 +24,15 @@ export class AuditRecorder {
   }
 
   before(call: ToolCall, outcome: BeforeReviewOutcome): AuditEntry {
+    const tokens = outcome.reviewers.reduce((sum, item) => sum + (item.tokens ?? 0), 0);
+    const costUsd = outcome.reviewers.reduce((sum, item) => sum + (item.costUsd ?? 0), 0);
     return this.#append({
       toolCallId: call.toolCallId, tool: call.toolName, phase: "before",
       decision: outcome.action, reasonCode: primaryReason(outcome.reviewers, "before_review"),
       reason: outcome.reason, reviewers: outcome.reviewers.map(toReviewer),
       durationMs: outcome.reviewers.reduce((max, item) => Math.max(max, item.durationMs), 0),
+      ...(tokens > 0 ? { tokens } : {}),
+      ...(costUsd > 0 ? { costUsd } : {}),
     });
   }
 
@@ -36,11 +40,15 @@ export class AuditRecorder {
     const diff = result.reviewContext?.diff;
     const kinds: Record<string, number> = {};
     if (diff) for (const file of diff.files) kinds[file.kind] = (kinds[file.kind] ?? 0) + 1;
+    const tokens = outcome.reviewers.reduce((sum, item) => sum + (item.tokens ?? 0), 0);
+    const costUsd = outcome.reviewers.reduce((sum, item) => sum + (item.costUsd ?? 0), 0);
     return this.#append({
       toolCallId: call.toolCallId, tool: call.toolName, phase: "after",
       decision: outcome.status, reasonCode: primaryReason(outcome.reviewers, outcome.status),
       reviewers: outcome.reviewers.map(toReviewer),
       durationMs: outcome.reviewers.reduce((max, item) => Math.max(max, item.durationMs), 0),
+      ...(tokens > 0 ? { tokens } : {}),
+      ...(costUsd > 0 ? { costUsd } : {}),
       ...(diff ? { diff: { files: diff.files.length, changedFiles: diff.files.filter((f) => f.kind !== "unchanged").length, truncated: diff.truncated, kinds } } : {}),
     });
   }
@@ -58,6 +66,8 @@ function toReviewer(value: BeforeReviewOutcome["reviewers"][number]): AuditRevie
     reasonCode: value.reasonCode, durationMs: value.durationMs,
     ...(value.reason === undefined ? {} : { reason: value.reason }),
     ...(value.confidence === undefined ? {} : { confidence: value.confidence }),
+    ...(value.tokens !== undefined ? { tokens: value.tokens } : {}),
+    ...(value.costUsd !== undefined ? { costUsd: value.costUsd } : {}),
   };
 }
 

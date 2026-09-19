@@ -1,25 +1,123 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { rankCandidates } from "./ranking.js";
-import type { DiscoveryCandidate, DiscoveryResult } from "./types.js";
+import type { JevEvaluationClient } from "../providers/jev/types.js";
+import type { DiscoveryCandidate, DiscoveryMatch, DiscoveryResult } from "./types.js";
 
 export interface ToolCatalog {
   list(): DiscoveryCandidate[];
 }
 
+interface CacheEntry {
+  result: DiscoveryResult;
+  expiresAt: number;
+}
+
 export class DiscoveryRuntime {
   readonly #tools: ToolCatalog;
-  constructor(tools: ToolCatalog) { this.#tools = tools; }
+  readonly #client: JevEvaluationClient | undefined;
+  readonly #cache = new Map<string, CacheEntry>();
+  readonly #ttlMs: number;
 
-  findTools(query: string, limit = 8): DiscoveryResult {
-    return { query, matches: rankCandidates(query, this.#tools.list(), limit), strategy: "lexical" };
+  constructor(tools: ToolCatalog, client?: JevEvaluationClient, ttlMs = 300_000) {
+    this.#tools = tools;
+    this.#client = client;
+    this.#ttlMs = ttlMs;
+  }
+
+  clearCache(): void {
+    this.#cache.clear();
+  }
+
+  async findTools(query: string, limit = 8): Promise<DiscoveryResult> {
+    const key = `tools:${query.trim().toLowerCase()}:${limit}`;
+    const cached = this.#cache.get(key);
+    if (cached && Date.now() < cached.expiresAt) return cached.result;
+
+    const stage1 = rankCandidates(query, this.#tools.list(), Math.max(limit, 5));
+    if (stage1.length === 0 || !this.#client?.isConfigured()) {
+      const res: DiscoveryResult = { query, matches: stage1.slice(0, limit), strategy: "lexical" };
+      if (stage1.length > 0) {
+        this.#cache.set(key, { result: res, expiresAt: Date.now() + this.#ttlMs });
+      }
+      return res;
+    }
+    const res = await this.#rerankWithJev(query, stage1, limit);
+    this.#cache.set(key, { result: res, expiresAt: Date.now() + this.#ttlMs });
+    return res;
   }
 
   async findSkills(query: string, roots: readonly string[], limit = 8): Promise<DiscoveryResult> {
+    const key = `skills:${query.trim().toLowerCase()}:${limit}:${roots.join(";")}`;
+    const cached = this.#cache.get(key);
+    if (cached && Date.now() < cached.expiresAt) return cached.result;
+
     const candidates: DiscoveryCandidate[] = [];
     for (const root of roots) candidates.push(...await scanSkillRoot(root));
     const unique = [...new Map(candidates.map((item) => [item.name, item])).values()];
-    return { query, matches: rankCandidates(query, unique, limit), strategy: "lexical" };
+    const stage1 = rankCandidates(query, unique, Math.max(limit, 5));
+    if (stage1.length === 0 || !this.#client?.isConfigured()) {
+      const res: DiscoveryResult = { query, matches: stage1.slice(0, limit), strategy: "lexical" };
+      if (stage1.length > 0) {
+        this.#cache.set(key, { result: res, expiresAt: Date.now() + this.#ttlMs });
+      }
+      return res;
+    }
+    const res = await this.#rerankWithJev(query, stage1, limit);
+    this.#cache.set(key, { result: res, expiresAt: Date.now() + this.#ttlMs });
+    return res;
+  }
+  async #rerankWithJev(
+    query: string,
+    candidates: DiscoveryMatch[],
+    limit: number,
+  ): Promise<DiscoveryResult> {
+    const shortlist = candidates.slice(0, 5);
+    const criteria: Record<string, string> = {};
+    for (const c of shortlist) {
+      criteria[c.name] = c.description
+        ? `${c.name}: ${c.description.slice(0, 200)}`
+        : c.name;
+    }
+    criteria.none = "None of these candidates are relevant to the requested task.";
+
+    try {
+      const response = await this.#client!.evaluate(
+        {
+          task: query,
+          candidateShortlist: shortlist.map((c) => ({ name: c.name, description: c.description })),
+        },
+        {
+          decision: {
+            instructions: "Which candidate best satisfies the user's requested capability or task? Choose one, or 'none' if none fit.",
+            criteria,
+          },
+        },
+      );
+
+      const answer = response.answers.decision;
+      if (!answer || answer.value === "none") {
+        return { query, matches: candidates.slice(0, limit), strategy: "lexical" };
+      }
+
+      const winnerName = answer.value;
+      const winner = candidates.find((c) => c.name === winnerName);
+      if (winner) {
+        const reordered = [
+          {
+            ...winner,
+            score: winner.score + 10,
+            reasons: [...winner.reasons, `selected by Jev semantic model (${(answer.confidence ?? 1).toFixed(2)})`],
+          },
+          ...candidates.filter((c) => c.name !== winnerName),
+        ];
+        return { query, matches: reordered.slice(0, limit), strategy: "semantic" };
+      }
+    } catch {
+      // Graceful fallback to lexical on any error or timeout
+    }
+
+    return { query, matches: candidates.slice(0, limit), strategy: "lexical" };
   }
 }
 
@@ -51,5 +149,13 @@ function firstText(content: string): string | undefined {
 }
 
 export function defaultSkillRoots(cwd: string): string[] {
-  return [join(cwd, ".omp", "skills"), join(cwd, ".pi", "skills"), join(process.env.HOME ?? "", ".omp", "skills"), join(process.env.HOME ?? "", ".pi", "agent", "skills")].filter(Boolean);
+  return [
+    join(cwd, ".omp", "skills"),
+    join(cwd, "skills"),
+    join(cwd, ".pi", "skills"),
+    join(process.env.HOME ?? "", ".omp", "skills"),
+    join(process.env.HOME ?? "", ".omp", "agent", "skills"),
+    join(process.env.HOME ?? "", ".agents", "skills"),
+    join(process.env.HOME ?? "", ".pi", "agent", "skills"),
+  ].filter(Boolean);
 }

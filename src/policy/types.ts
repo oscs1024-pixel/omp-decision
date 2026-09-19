@@ -22,6 +22,7 @@ export interface PolicyConfig {
   enabled: boolean;
   builtinRules: boolean;
   rules: PolicyRule[];
+  protectedPaths?: string[] | undefined;
 }
 
 export interface PolicyEngine {

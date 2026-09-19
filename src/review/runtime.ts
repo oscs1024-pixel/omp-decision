@@ -1,5 +1,6 @@
 import { DecisionProviderRegistry } from "../providers/registry.js";
 import type { DecisionProviderResult } from "../providers/types.js";
+import { loadReviewerRules } from "./rules.js";
 import { selectReviewers } from "./selector.js";
 import type {
   AfterReviewOutcome,
@@ -36,14 +37,14 @@ function timeoutSignal(parent: AbortSignal | undefined, timeoutMs: number): { si
 
 async function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) throw signal.reason ?? new Error("aborted");
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new Error("aborted"));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => { signal.removeEventListener("abort", onAbort); resolve(value); },
-      (error) => { signal.removeEventListener("abort", onAbort); reject(error); },
-    );
-  });
+  const { promise: resPromise, resolve, reject } = Promise.withResolvers<T>();
+  const onAbort = () => reject(signal.reason ?? new Error("aborted"));
+  signal.addEventListener("abort", onAbort, { once: true });
+  promise.then(
+    (value) => { signal.removeEventListener("abort", onAbort); resolve(value); },
+    (error) => { signal.removeEventListener("abort", onAbort); reject(error); },
+  );
+  return resPromise;
 }
 
 function mapBefore(result: DecisionProviderResult): "allow" | "deny" | "ask" {
@@ -67,16 +68,22 @@ export class ReviewRuntime {
     this.#defaultTimeoutMs = defaultTimeoutMs;
   }
 
-  select(reviewers: readonly ReviewerConfig[], toolName: string, phase: "before" | "after"): ReviewerConfig[] {
-    return selectReviewers(reviewers, toolName, phase);
+  select(
+    reviewers: readonly ReviewerConfig[],
+    toolName: string,
+    phase: "before" | "after",
+    files?: readonly string[],
+  ): ReviewerConfig[] {
+    return selectReviewers(reviewers, toolName, phase, files);
   }
 
   async before(
     call: ToolCall,
     reviewers: readonly ReviewerConfig[],
     signal?: AbortSignal,
+    files?: readonly string[],
   ): Promise<BeforeReviewOutcome> {
-    const selected = this.select(reviewers, call.toolName, "before");
+    const selected = this.select(reviewers, call.toolName, "before", files);
     const results = await Promise.all(selected.map((reviewer) => this.#runBeforeReviewer(call, reviewer, signal)));
     const denied = results.find((result) => result.status === "denied");
     if (denied) return { action: "deny", reason: denied.reason ?? denied.reasonCode, reviewers: results };
@@ -90,6 +97,7 @@ export class ReviewRuntime {
     result: ToolExecutionResult,
     reviewers: readonly ReviewerConfig[],
     signal?: AbortSignal,
+    files?: readonly string[],
   ): Promise<AfterReviewOutcome> {
     if (result.isError) {
       return {
@@ -105,12 +113,12 @@ export class ReviewRuntime {
       };
     }
 
-    const selected = this.select(reviewers, call.toolName, "after");
+    const selected = this.select(reviewers, call.toolName, "after", files);
     if (selected.length === 0) return { status: "skipped", reviewers: [] };
     const results = await Promise.all(selected.map((reviewer) => this.#runAfterReviewer(call, result, reviewer, signal)));
     const rejected = results.filter((entry) => entry.status === "rejected");
     if (rejected.length) {
-      return { status: "rejected", reviewers: results, diagnostic: this.#diagnostic(call, rejected) };
+      return { status: "rejected", reviewers: results, diagnostic: this.#diagnostic(call, rejected, files) };
     }
     if (results.some((entry) => entry.status === "failed")) return { status: "failed", reviewers: results };
     return { status: "passed", reviewers: results };
@@ -124,11 +132,14 @@ export class ReviewRuntime {
     const timed = timeoutSignal(parent, reviewer.timeoutMs ?? this.#defaultTimeoutMs);
     try {
       if (!(await raceWithAbort(provider.isAvailable(), timed.signal))) return this.#beforeFailure(reviewer, "provider_unavailable", started);
+      const rules = await loadReviewerRules(call.cwd, reviewer.rulesFiles);
       const decision = await raceWithAbort(provider.decide({
         phase: "before",
         toolCallId: call.toolCallId,
         toolName: call.toolName,
         input: call.input,
+        rules,
+        reviewer: { id: reviewer.id, name: reviewer.name },
         signal: timed.signal,
       }), timed.signal);
       const action = mapBefore(decision);
@@ -141,6 +152,9 @@ export class ReviewRuntime {
         ...(decision.reason === undefined ? {} : { reason: decision.reason }),
         ...(decision.confidence === undefined ? {} : { confidence: decision.confidence }),
         durationMs: Math.round(performance.now() - started),
+        ...(decision.findings ? { findings: decision.findings } : {}),
+        ...(decision.tokens !== undefined ? { tokens: decision.tokens } : {}),
+        ...(decision.costUsd !== undefined ? { costUsd: decision.costUsd } : {}),
       };
     } catch (error) {
       return this.#beforeFailure(reviewer, timed.signal.aborted ? "provider_aborted_or_timeout" : "provider_error", started, error);
@@ -175,12 +189,15 @@ export class ReviewRuntime {
     const timed = timeoutSignal(parent, reviewer.timeoutMs ?? this.#defaultTimeoutMs);
     try {
       if (!(await raceWithAbort(provider.isAvailable(), timed.signal))) return this.#afterFailure(reviewer, "provider_unavailable", started);
+      const rules = await loadReviewerRules(call.cwd, reviewer.rulesFiles);
       const decision = await raceWithAbort(provider.decide({
         phase: "after",
         toolCallId: call.toolCallId,
         toolName: call.toolName,
         input: call.input,
         result,
+        rules,
+        reviewer: { id: reviewer.id, name: reviewer.name },
         signal: timed.signal,
       }), timed.signal);
       const mapped = mapAfter(decision);
@@ -195,6 +212,9 @@ export class ReviewRuntime {
         ...(decision.reason === undefined ? {} : { reason: decision.reason }),
         ...(decision.confidence === undefined ? {} : { confidence: decision.confidence }),
         durationMs: Math.round(performance.now() - started),
+        ...(decision.findings ? { findings: decision.findings } : {}),
+        ...(decision.tokens !== undefined ? { tokens: decision.tokens } : {}),
+        ...(decision.costUsd !== undefined ? { costUsd: decision.costUsd } : {}),
       };
     } catch (error) {
       return this.#afterFailure(reviewer, timed.signal.aborted ? "provider_aborted_or_timeout" : "provider_error", started, error);
@@ -216,8 +236,15 @@ export class ReviewRuntime {
     };
   }
 
-  #diagnostic(call: ToolCall, rejected: ReviewerResult[]): string {
-    const findings = rejected.map((entry) => `- ${entry.reviewerName}: ${entry.reason ?? entry.reasonCode}`).join("\n");
-    return `[omp-decision: review rejected]\n\nTool: ${call.toolName}\n\nFindings:\n${findings}\n\nRequired action:\nFix the reported issue before continuing.`;
+  #diagnostic(call: ToolCall, rejected: ReviewerResult[], files?: readonly string[]): string {
+    const fileLine = files && files.length > 0 ? `\nFile: ${files.join(", ")}` : "";
+    const reviewerNames = rejected.map((r) => r.reviewerName).join(", ");
+    const findings = rejected.map((entry) => {
+      if (entry.findings && entry.findings.length > 0) {
+        return entry.findings.map((f) => `- [${f.severity}] ${f.message}`).join("\n");
+      }
+      return `- ${entry.reviewerName}: ${entry.reason ?? entry.reasonCode}`;
+    }).join("\n");
+    return `[omp-decision: review rejected]\n\nTool: ${call.toolName}${fileLine}\nReviewer: ${reviewerNames}\n\nFindings:\n${findings}\n\nRequired action:\nFix the reported issue before continuing.`;
   }
 }
