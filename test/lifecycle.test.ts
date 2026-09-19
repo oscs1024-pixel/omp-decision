@@ -66,3 +66,28 @@ test("ask decisions use confirmation and only pending when approved", async () =
   assert.equal(denied?.block, true);
   assert.equal(lifecycle.pending.size, 0);
 });
+
+test("edit after-review receives actual filesystem diff", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-life-"));
+  const path = join(root, "a.ts");
+  writeFileSync(path, "const value = 1;\n");
+
+  let diffText = "";
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider((request) => {
+    if (request.phase === "after") diffText = request.result?.reviewContext?.diff?.text ?? "";
+    return { action: "allow", reasonCode: "ok" };
+  }));
+  const lifecycle = new ToolLifecycleRuntime(new ReviewRuntime(providers, 1000), [reviewer], 16000, 24000);
+  const editCall: ToolCall = { toolCallId: "diff", toolName: "edit", input: { path }, cwd: root, timestamp: Date.now() };
+
+  await lifecycle.before(editCall);
+  writeFileSync(path, "const value = 2;\n");
+  await lifecycle.after("diff", { content: [], details: undefined, isError: false });
+
+  assert.match(diffText, /-const value = 1;/);
+  assert.match(diffText, /\+const value = 2;/);
+});
