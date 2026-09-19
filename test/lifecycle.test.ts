@@ -91,3 +91,61 @@ test("edit after-review receives actual filesystem diff", async () => {
   assert.match(diffText, /-const value = 1;/);
   assert.match(diffText, /\+const value = 2;/);
 });
+
+test("policy hard deny runs before semantic provider", async () => {
+  const { PolicyEngine } = await import("../src/policy/engine.js");
+  let providerCalls = 0;
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider(() => {
+    providerCalls++;
+    return { action: "allow", reasonCode: "provider_allow" };
+  }));
+  const shellReviewer: ReviewerConfig = { ...reviewer, tools: ["bash"] };
+  const lifecycle = new ToolLifecycleRuntime(
+    new ReviewRuntime(providers, 1000),
+    [shellReviewer],
+    16000,
+    24000,
+    new PolicyEngine({ enabled: true, builtinRules: true, rules: [] }),
+  );
+  const result = await lifecycle.before({
+    toolCallId: "danger",
+    toolName: "bash",
+    input: { command: "git reset --hard HEAD" },
+    cwd: "/repo",
+    timestamp: Date.now(),
+  });
+  assert.equal(result?.block, true);
+  assert.equal(providerCalls, 0);
+});
+
+test("safe policy fast path skips before provider but preserves after lifecycle", async () => {
+  const { PolicyEngine } = await import("../src/policy/engine.js");
+  let beforeCalls = 0;
+  let afterCalls = 0;
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider((request) => {
+    if (request.phase === "before") beforeCalls++;
+    else afterCalls++;
+    return { action: "allow", reasonCode: "ok" };
+  }));
+  const shellReviewer: ReviewerConfig = { ...reviewer, tools: ["bash"] };
+  const lifecycle = new ToolLifecycleRuntime(
+    new ReviewRuntime(providers, 1000),
+    [shellReviewer],
+    16000,
+    24000,
+    new PolicyEngine({ enabled: true, builtinRules: true, rules: [] }),
+  );
+  await lifecycle.before({
+    toolCallId: "safe",
+    toolName: "bash",
+    input: { command: "git status --short" },
+    cwd: "/repo",
+    timestamp: Date.now(),
+  });
+  assert.equal(beforeCalls, 0);
+  assert.equal(lifecycle.pending.size, 1);
+  await lifecycle.after("safe", { content: [], details: undefined, isError: false });
+  assert.equal(afterCalls, 1);
+});
