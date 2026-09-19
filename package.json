@@ -4,18 +4,33 @@
   "description": "Decision and tool-lifecycle review layer for OMP coding agents",
   "type": "module",
   "main": "./extensions/index.ts",
-  "exports": { ".": "./extensions/index.ts" },
-  "files": ["extensions", "src", "skills", "docs", "README.md", "LICENSE"],
+  "exports": {
+    ".": "./extensions/index.ts"
+  },
+  "files": [
+    "extensions",
+    "src",
+    "skills",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit --pretty false",
     "test": "tsx --test test/**/*.test.ts",
     "check": "npm run typecheck && npm test"
   },
   "pi": {
-    "extensions": ["./extensions/index.ts"],
-    "skills": ["./skills/omp-decision/SKILL.md"]
+    "extensions": [
+      "./extensions/index.ts"
+    ],
+    "skills": [
+      "./skills/omp-decision/SKILL.md"
+    ]
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "peerDependencies": {
     "@oh-my-pi/pi-coding-agent": ">=17.2.9"
   },
@@ -26,5 +41,14 @@
     "typescript": "^5.9.0"
   },
   "license": "MIT",
-  "keywords": ["omp", "oh-my-pi", "coding-agent", "decision", "tool-review"]
+  "keywords": [
+    "omp",
+    "oh-my-pi",
+    "coding-agent",
+    "decision",
+    "tool-review"
+  ],
+  "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0"
+  }
 }
