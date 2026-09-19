@@ -52,9 +52,9 @@ function mapBefore(result: DecisionProviderResult): "allow" | "deny" | "ask" {
   return "allow";
 }
 
-function mapAfter(result: DecisionProviderResult): "passed" | "rejected" | "failed" {
+function mapAfter(result: DecisionProviderResult): "passed" | "rejected" | "uncertain" {
   if (result.action === "deny" || result.action === "reject") return "rejected";
-  if (result.action === "ask" || result.action === "uncertain") return "failed";
+  if (result.action === "ask" || result.action === "uncertain") return "uncertain";
   return "passed";
 }
 
@@ -157,7 +157,7 @@ export class ReviewRuntime {
       phase: "before",
       status: action === "allow" ? "allowed" : action === "deny" ? "denied" : "asked",
       reasonCode: code,
-      reason: error instanceof Error ? error.message : code,
+      reason: error instanceof Error ? error.message : typeof error === "string" ? error : code,
       durationMs: Math.round(performance.now() - started),
     };
   }
@@ -183,7 +183,9 @@ export class ReviewRuntime {
         result,
         signal: timed.signal,
       }), timed.signal);
-      const status = mapAfter(decision);
+      const mapped = mapAfter(decision);
+      if (mapped === "uncertain") return this.#afterFailure(reviewer, "provider_uncertain", started, decision.reason);
+      const status = mapped;
       return {
         reviewerId: reviewer.id,
         reviewerName: reviewer.name,
@@ -202,11 +204,12 @@ export class ReviewRuntime {
   }
 
   #afterFailure(reviewer: ReviewerConfig, code: string, started: number, error?: unknown): ReviewerResult {
+    const action = failureAction(reviewer.failureMode);
     return {
       reviewerId: reviewer.id,
       reviewerName: reviewer.name,
       phase: "after",
-      status: "failed",
+      status: action === "deny" ? "rejected" : action === "ask" ? "failed" : "passed",
       reasonCode: code,
       reason: error instanceof Error ? error.message : code,
       durationMs: Math.round(performance.now() - started),
