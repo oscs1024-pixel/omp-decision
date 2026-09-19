@@ -24,6 +24,7 @@ export function formatRuntimeStatus(state: DecisionRuntimeState): string {
     "omp-decision",
     `status: ${state.enabled ? "enabled" : "disabled"}`,
     `review: ${config.review.enabled ? "enabled" : "disabled"}`,
+    `jev: ${config.providers.jev.enabled ? "enabled" : "disabled"}`,
     `config: ${sources.length ? sources.join(", ") : "defaults"}`,
     `warnings: ${warnings.length}`,
   ].join("\n");
