@@ -22,6 +22,8 @@ Phase 3 adds diff-aware after-review for `edit` and `write`: filesystem targets 
 
 Phase 4 adds a deterministic policy engine before semantic review. Built-in hard-deny rules cannot be overridden by user allow rules or providers. Explicit user deny/ask/allow rules are evaluated next, followed by safe read-only fast paths; unmatched calls continue to semantic review.
 
+Phase 5 adds the Jev decision provider through the generic DecisionProvider interface. It uses TypeSafe System One choice judgments, phase-specific criteria, configurable confidence thresholds, abort propagation, response normalization, sensitive-key redaction, and actual filesystem diff context for after-review.
+
 ## Configuration
 
 User configuration:
@@ -45,4 +47,33 @@ Project values override user values; user values override defaults.
 ```sh
 npm install
 npm run check
+```
+
+## Jev provider
+
+Set `TYPESAFE_API_KEY`, or place the key at `~/.omp/secrets/typesafe_api_key` (the Pi-compatible `~/.pi/agent/secrets/typesafe_api_key` is also accepted).
+
+Example:
+
+```json
+{
+  "providers": {
+    "jev": {
+      "enabled": true,
+      "allowThreshold": 0.65,
+      "denyThreshold": 0.75
+    }
+  },
+  "review": {
+    "reviewers": [{
+      "id": "security",
+      "name": "Security review",
+      "enabled": true,
+      "tools": ["bash", "edit", "write"],
+      "trigger": "both",
+      "provider": "jev",
+      "failureMode": "ask"
+    }]
+  }
+}
 ```
