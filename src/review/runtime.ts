@@ -122,7 +122,11 @@ export class ReviewRuntime {
     if (rejected.length) {
       return { status: "rejected", reviewers: results, diagnostic: this.#diagnostic(call, rejected, files) };
     }
-    if (results.some((entry) => entry.status === "failed" || entry.status === "uncertain")) return { status: "failed", reviewers: results };
+    if (results.some((entry) => entry.status === "failed")) return { status: "failed", reviewers: results };
+    const uncertain = results.filter((entry) => entry.status === "uncertain");
+    if (uncertain.length) {
+      return { status: "uncertain", reviewers: results, diagnostic: this.#uncertainDiagnostic(call, uncertain, files) };
+    }
     return { status: "passed", reviewers: results };
   }
 
@@ -255,6 +259,12 @@ export class ReviewRuntime {
       reason: error instanceof Error ? error.message : typeof error === "string" ? error : code,
       durationMs: Math.round(performance.now() - started),
     };
+  }
+
+  #uncertainDiagnostic(call: ToolCall, uncertain: ReviewerResult[], files?: readonly string[]): string {
+    const fileLine = files && files.length > 0 ? `\nFile: ${files.join(", ")}` : "";
+    const reasons = uncertain.map((entry) => `- ${entry.reviewerName}: ${entry.reason ?? entry.reasonCode}`).join("\n");
+    return `[omp-decision: review uncertain]\n\nTool: ${call.toolName}${fileLine}\n\nReason:\n${reasons}\n\nRequired action:\nInspect the change or run additional verification before relying on it.`;
   }
 
   #diagnostic(call: ToolCall, rejected: ReviewerResult[], files?: readonly string[]): string {
