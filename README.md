@@ -77,3 +77,7 @@ Example:
   }
 }
 ```
+
+## Audit and observability
+
+Phase 6 records policy, before-review, and after-review decisions in a bounded in-memory audit store that is not injected into model context. Entries contain decision/reason metadata, reviewer confidence and latency, and diff metadata only (never diff contents). Use `/decision log [limit]` to inspect recent decisions and `/decision inspect <id>` for one record. Explicit after-review rejection diagnostics may include the audit ID in tool-result details for correlation.
