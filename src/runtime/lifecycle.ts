@@ -63,7 +63,7 @@ export class ToolLifecycleRuntime {
       if (!(await confirm(policy.reason))) return { block: true, reason: "User denied omp-decision policy confirmation" };
     }
 
-    const beforeOutcome = policy?.action === "allow"
+    const beforeOutcome = policy?.action === "allow" || policy?.action === "ask"
       ? { action: "allow" as const, reviewers: [] }
       : await this.#review.before(call, this.#reviewers, signal);
     this.#audit?.before(call, beforeOutcome);
