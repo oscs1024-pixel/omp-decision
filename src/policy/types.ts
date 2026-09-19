@@ -6,7 +6,7 @@ export interface PolicyDecision {
   action: PolicyAction;
   reasonCode: string;
   reason: string;
-  ruleId?: string;
+  ruleId?: string | undefined;
 }
 
 export interface PolicyRule {
@@ -15,7 +15,7 @@ export interface PolicyRule {
   tools: string[];
   action: Exclude<PolicyAction, "review">;
   reason: string;
-  commandPattern?: string;
+  commandPattern?: string | undefined;
 }
 
 export interface PolicyConfig {

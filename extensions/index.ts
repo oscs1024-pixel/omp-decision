@@ -47,10 +47,9 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
       if (ctx.hasUI) ctx.ui.notify(`omp-decision: ${warning}`, "warning");
     }
   });
-
   pi.on("tool_call", async (event, ctx) => {
     if (!state.enabled || (!state.loaded.config.review.enabled && !state.loaded.config.policy.enabled)) return;
-    return lifecycle.before(
+    const res = await lifecycle.before(
       {
         toolCallId: event.toolCallId,
         toolName: event.toolName,
@@ -63,6 +62,11 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
         ? (message) => ctx.ui.confirm("omp-decision review", message)
         : undefined,
     );
+    if (!res?.block) return;
+    return {
+      block: true,
+      ...(res.reason !== undefined ? { reason: res.reason } : {}),
+    };
   });
 
   pi.on("tool_result", async (event: ToolResultEvent, _ctx) => {

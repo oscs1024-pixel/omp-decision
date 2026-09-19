@@ -13,14 +13,14 @@ import type { AuditRecorder } from "../audit/recorder.js";
 import { PendingToolCallStore } from "./pending-store.js";
 
 export interface BeforeLifecycleResult {
-  block?: boolean;
-  reason?: string;
+  block?: boolean | undefined;
+  reason?: string | undefined;
 }
 
 export interface AfterLifecycleResult {
-  content?: unknown[];
-  details?: unknown;
-  isError?: boolean;
+  content?: unknown[] | undefined;
+  details?: unknown | undefined;
+  isError?: boolean | undefined;
 }
 
 export type ConfirmationHandler = (message: string) => Promise<boolean>;
