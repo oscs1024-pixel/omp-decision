@@ -1,3 +1,6 @@
+import { createDiffBundle } from "../diff/unified.js";
+import { SnapshotManager } from "../diff/snapshot.js";
+import { extractMutationTargets } from "../diff/targets.js";
 import type { ReviewerConfig, ToolCall, ToolExecutionResult } from "../review/types.js";
 import { ReviewRuntime } from "../review/runtime.js";
 import { PendingToolCallStore } from "./pending-store.js";
@@ -19,10 +22,19 @@ export class ToolLifecycleRuntime {
   readonly pending = new PendingToolCallStore();
   readonly #review: ReviewRuntime;
   #reviewers: ReviewerConfig[];
+  readonly #snapshots: SnapshotManager;
+  readonly #maxPayloadChars: number;
 
-  constructor(review: ReviewRuntime, reviewers: ReviewerConfig[] = []) {
+  constructor(
+    review: ReviewRuntime,
+    reviewers: ReviewerConfig[] = [],
+    maxFileContextChars = 16_000,
+    maxPayloadChars = 24_000,
+  ) {
     this.#review = review;
     this.#reviewers = reviewers;
+    this.#snapshots = new SnapshotManager(maxFileContextChars);
+    this.#maxPayloadChars = maxPayloadChars;
   }
 
   setReviewers(reviewers: ReviewerConfig[]): void {
@@ -49,10 +61,14 @@ export class ToolLifecycleRuntime {
       }
     }
 
+    const afterReviewers = this.#review.select(this.#reviewers, call.toolName, "after");
+    const targets = afterReviewers.length > 0 ? extractMutationTargets(call.toolName, call.input, call.cwd) : [];
+    const snapshots = targets.length > 0 ? await this.#snapshots.captureMany(targets) : undefined;
     this.pending.set({
       call,
       beforeOutcome,
-      afterReviewers: this.#review.select(this.#reviewers, call.toolName, "after"),
+      afterReviewers,
+      ...(snapshots === undefined ? {} : { snapshots }),
     });
     return undefined;
   }
@@ -61,7 +77,14 @@ export class ToolLifecycleRuntime {
     const pending = this.pending.take(toolCallId);
     if (!pending) return undefined;
 
-    const outcome = await this.#review.after(pending.call, result, pending.afterReviewers, signal);
+    let enriched = result;
+    if (pending.snapshots && pending.snapshots.size > 0 && !result.isError) {
+      const afterSnapshots = await this.#snapshots.captureMany([...pending.snapshots.keys()]);
+      const diff = createDiffBundle(pending.snapshots, afterSnapshots, this.#maxPayloadChars);
+      enriched = { ...result, reviewContext: { ...result.reviewContext, diff } };
+    }
+
+    const outcome = await this.#review.after(pending.call, enriched, pending.afterReviewers, signal);
     if (!outcome.diagnostic) return undefined;
 
     return {
