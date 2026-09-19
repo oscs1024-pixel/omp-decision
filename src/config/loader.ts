@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { FailureMode, ReviewerConfig, ReviewTrigger } from "../review/types.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
 import type { DecisionConfig, LoadedDecisionConfig } from "./types.js";
 
@@ -14,6 +15,56 @@ function positiveInteger(value: unknown, fallback: number, path: string, warning
   return fallback;
 }
 
+function parseReviewer(value: unknown, index: number, source: string, warnings: string[]): ReviewerConfig | undefined {
+  if (!isRecord(value)) {
+    warnings.push(`${source}: review.reviewers[${index}] must be an object`);
+    return undefined;
+  }
+  const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : undefined;
+  const name = typeof value.name === "string" && value.name.trim() ? value.name.trim() : id;
+  const provider = typeof value.provider === "string" && value.provider.trim() ? value.provider.trim() : undefined;
+  const tools = Array.isArray(value.tools) ? value.tools.filter((tool): tool is string => typeof tool === "string" && tool.length > 0) : [];
+  const trigger: ReviewTrigger = value.trigger === "before" || value.trigger === "after" || value.trigger === "both" ? value.trigger : "both";
+  const failureMode: FailureMode = value.failureMode === "closed" || value.failureMode === "ask" || value.failureMode === "open" ? value.failureMode : "open";
+  if (!id || !name || !provider || tools.length === 0) {
+    warnings.push(`${source}: review.reviewers[${index}] requires id, name/provider, and at least one tool`);
+    return undefined;
+  }
+  const reviewer: ReviewerConfig = {
+    id,
+    name,
+    provider,
+    tools,
+    trigger,
+    failureMode,
+    enabled: value.enabled !== false,
+  };
+  if (typeof value.timeoutMs === "number" && Number.isSafeInteger(value.timeoutMs) && value.timeoutMs > 0) {
+    reviewer.timeoutMs = value.timeoutMs;
+  } else if (value.timeoutMs !== undefined) {
+    warnings.push(`${source}: review.reviewers[${index}].timeoutMs must be a positive integer`);
+  }
+  return reviewer;
+}
+
+function parseReviewers(value: unknown, source: string, warnings: string[]): ReviewerConfig[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    warnings.push(`${source}: review.reviewers must be an array`);
+    return undefined;
+  }
+  const reviewers = value.map((item, index) => parseReviewer(item, index, source, warnings)).filter((item): item is ReviewerConfig => item !== undefined);
+  const seen = new Set<string>();
+  return reviewers.filter((reviewer) => {
+    if (seen.has(reviewer.id)) {
+      warnings.push(`${source}: duplicate reviewer id "${reviewer.id}" ignored`);
+      return false;
+    }
+    seen.add(reviewer.id);
+    return true;
+  });
+}
+
 function applyConfig(base: DecisionConfig, raw: unknown, source: string, warnings: string[]): DecisionConfig {
   if (!isRecord(raw)) {
     warnings.push(`${source}: root must be a JSON object`);
@@ -21,6 +72,7 @@ function applyConfig(base: DecisionConfig, raw: unknown, source: string, warning
   }
   const review = isRecord(raw.review) ? raw.review : undefined;
   if (raw.review !== undefined && !review) warnings.push(`${source}: review must be an object`);
+  const reviewers = parseReviewers(review?.reviewers, source, warnings);
 
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
@@ -29,6 +81,7 @@ function applyConfig(base: DecisionConfig, raw: unknown, source: string, warning
       maxFileContextChars: positiveInteger(review?.maxFileContextChars, base.review.maxFileContextChars, `${source}: review.maxFileContextChars`, warnings),
       maxPayloadChars: positiveInteger(review?.maxPayloadChars, base.review.maxPayloadChars, `${source}: review.maxPayloadChars`, warnings),
       defaultTimeoutMs: positiveInteger(review?.defaultTimeoutMs, base.review.defaultTimeoutMs, `${source}: review.defaultTimeoutMs`, warnings),
+      reviewers: reviewers ?? base.review.reviewers.map((item) => ({ ...item, tools: [...item.tools] })),
     },
   };
 }
@@ -48,20 +101,14 @@ export function loadDecisionConfig(cwd: string, home = homedir()): LoadedDecisio
   const sources: string[] = [];
   let config: DecisionConfig = {
     enabled: DEFAULT_CONFIG.enabled,
-    review: { ...DEFAULT_CONFIG.review },
+    review: { ...DEFAULT_CONFIG.review, reviewers: [] },
   };
-
-  const paths = [
-    join(home, ".omp", "decision", "config.json"),
-    join(cwd, ".omp", "decision.json"),
-  ];
-
+  const paths = [join(home, ".omp", "decision", "config.json"), join(cwd, ".omp", "decision.json")];
   for (const path of paths) {
     const raw = readJson(path, warnings);
     if (raw === undefined) continue;
     config = applyConfig(config, raw, path, warnings);
     sources.push(path);
   }
-
   return { config, sources, warnings };
 }
