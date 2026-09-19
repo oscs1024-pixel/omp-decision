@@ -211,7 +211,7 @@ export class ReviewRuntime {
       phase: "after",
       status: action === "deny" ? "rejected" : action === "ask" ? "failed" : "passed",
       reasonCode: code,
-      reason: error instanceof Error ? error.message : code,
+      reason: error instanceof Error ? error.message : typeof error === "string" ? error : code,
       durationMs: Math.round(performance.now() - started),
     };
   }
