@@ -46,3 +46,23 @@ test("blocked calls are never stored as pending", async () => {
   assert.equal(result?.block, true);
   assert.equal(lifecycle.pending.size, 0);
 });
+
+test("ask decisions use confirmation and only pending when approved", async () => {
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider(() => ({ action: "ask", reasonCode: "confirm", reason: "confirm edit" })));
+  const lifecycle = new ToolLifecycleRuntime(new ReviewRuntime(providers, 1000), [reviewer]);
+
+  let prompt = "";
+  const allowed = await lifecycle.before(call("approved"), undefined, async (message) => {
+    prompt = message;
+    return true;
+  });
+  assert.equal(allowed, undefined);
+  assert.equal(prompt, "confirm edit");
+  assert.equal(lifecycle.pending.size, 1);
+
+  lifecycle.clear();
+  const denied = await lifecycle.before(call("denied"), undefined, async () => false);
+  assert.equal(denied?.block, true);
+  assert.equal(lifecycle.pending.size, 0);
+});
