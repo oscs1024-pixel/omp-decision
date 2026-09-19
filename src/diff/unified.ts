@@ -89,7 +89,7 @@ export function createFileDiff(before: FileSnapshot, after: FileSnapshot): FileD
   const kind: FileDiff["kind"] = unavailable ? "unavailable"
     : !before.exists && after.exists ? "created"
     : before.exists && !after.exists ? "deleted"
-    : before.content === after.content && before.exists === after.exists ? "unchanged"
+    : before.exists === after.exists && before.content === after.content && before.truncated === after.truncated ? "unchanged"
     : "modified";
 
   if (kind === "unchanged") return { path: after.path, kind, before, after, unifiedDiff: "", truncated: before.truncated || after.truncated };
@@ -100,7 +100,8 @@ export function createFileDiff(before: FileSnapshot, after: FileSnapshot): FileD
 
   const oldName = before.exists ? `a/${basename(before.path)}` : "/dev/null";
   const newName = after.exists ? `b/${basename(after.path)}` : "/dev/null";
-  const body = formatHunks(lcsOps(splitLines(before.content), splitLines(after.content)));
+  let body = formatHunks(lcsOps(splitLines(before.content), splitLines(after.content)));
+  if (!body && (before.truncated || after.truncated)) body = "# diff incomplete: file snapshot was truncated; changed content may be outside captured prefix";
   const diff = [`--- ${oldName}`, `+++ ${newName}`, body].filter(Boolean).join("\n");
   return { path: after.path, kind, before, after, unifiedDiff: diff, truncated: before.truncated || after.truncated };
 }
