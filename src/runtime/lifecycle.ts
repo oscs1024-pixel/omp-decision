@@ -1,4 +1,5 @@
 import type { AuditRecorder } from "../audit/recorder.js";
+import { resolveMutationTarget } from "../diff/boundary.js";
 import { createDiffBundle } from "../diff/unified.js";
 import { SnapshotManager } from "../diff/snapshot.js";
 import { extractMutationTargets } from "../diff/targets.js";
@@ -82,7 +83,13 @@ export class ToolLifecycleRuntime {
 
     const afterReviewers = this.#review.select(this.#reviewers, call.toolName, "after");
     const targets = afterReviewers.length > 0 ? extractMutationTargets(call.toolName, call.input, call.cwd) : [];
-    const snapshots = targets.length > 0 ? await this.#snapshots.captureMany(targets) : undefined;
+    const resolvedTargets = await Promise.all(targets.map((target) => resolveMutationTarget(call.cwd, target)));
+    const escaped = resolvedTargets.find((target) => !target.withinWorkspace);
+    if (escaped) {
+      return { block: true, reason: `[workspace_boundary] mutation target escapes workspace: ${escaped.requestedPath}` };
+    }
+    const canonicalTargets = resolvedTargets.map((target) => target.canonicalPath);
+    const snapshots = canonicalTargets.length > 0 ? await this.#snapshots.captureMany(canonicalTargets) : undefined;
     this.pending.set({
       call,
       beforeOutcome,
