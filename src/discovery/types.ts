@@ -2,6 +2,7 @@ export interface DiscoveryCandidate {
   name: string;
   description?: string;
   source?: string;
+  active?: boolean;
 }
 
 export interface DiscoveryMatch extends DiscoveryCandidate {
