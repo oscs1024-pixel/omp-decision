@@ -15,6 +15,8 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
     return new ToolLifecycleRuntime(
       new ReviewRuntime(providers, state.loaded.config.review.defaultTimeoutMs),
       state.loaded.config.review.enabled ? state.loaded.config.review.reviewers : [],
+      state.loaded.config.review.maxFileContextChars,
+      state.loaded.config.review.maxPayloadChars,
     );
   }
 
