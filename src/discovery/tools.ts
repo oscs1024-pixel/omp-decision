@@ -14,7 +14,7 @@ export function registerDiscoveryTools(pi: ExtensionAPI): void {
   const runtime = new DiscoveryRuntime({
     list: () => pi.getAllTools()
       .filter((tool) => tool.name !== "decision_find_tools" && tool.name !== "decision_find_skill")
-      .map((tool) => ({ name: tool.name, description: tool.description, source: tool.sourceInfo?.type })),
+      .map((tool) => ({ name: tool.name, description: tool.description, source: tool.sourceInfo.source, active: pi.getActiveTools().includes(tool.name) })),
   });
 
   pi.registerTool({
