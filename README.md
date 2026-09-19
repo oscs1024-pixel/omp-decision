@@ -89,3 +89,4 @@ Phase 7 registers two read-only, discoverable agent tools: `decision_find_tools`
 ## Release hardening
 
 The main branch includes CI for Node 22 running TypeScript checking and the full test suite. Workspace mutation targets are canonicalized to prevent symlink escapes. Provider calls have enforced timeouts even when a provider ignores AbortSignal. Shell safe-fast-path rules reject command composition/metacharacters. Invalid policy regexes are rejected during config load. Truncated file snapshots are explicitly treated as incomplete evidence rather than confidently unchanged.
+
