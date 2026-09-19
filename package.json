@@ -18,7 +18,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit --pretty false",
     "test": "tsx --test test/**/*.test.ts",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "pack:check": "npm pack --dry-run",
+    "release:check": "npm run check && npm run pack:check"
   },
   "pi": {
     "extensions": [
@@ -49,6 +51,6 @@
     "tool-review"
   ],
   "dependencies": {
-    "@typesafe-ai/sdk": "^0.6.0"
+    "@typesafe-ai/sdk": "0.6.0"
   }
 }
