@@ -86,10 +86,13 @@ function formatHunks(ops: Op[], context = 3): string {
 
 export function createFileDiff(before: FileSnapshot, after: FileSnapshot): FileDiff {
   const unavailable = Boolean(before.readError || after.readError);
+  const beforeText = before.fullContent ?? before.content;
+  const afterText = after.fullContent ?? after.content;
+  const complete = (!before.truncated || before.fullContent !== undefined) && (!after.truncated || after.fullContent !== undefined);
   const kind: FileDiff["kind"] = unavailable ? "unavailable"
     : !before.exists && after.exists ? "created"
     : before.exists && !after.exists ? "deleted"
-    : before.exists === after.exists && before.content === after.content && before.truncated === after.truncated ? "unchanged"
+    : complete && before.exists === after.exists && beforeText === afterText ? "unchanged"
     : "modified";
 
   if (kind === "unchanged") return { path: after.path, kind, before, after, unifiedDiff: "", truncated: before.truncated || after.truncated };
@@ -100,10 +103,15 @@ export function createFileDiff(before: FileSnapshot, after: FileSnapshot): FileD
 
   const oldName = before.exists ? `a/${basename(before.path)}` : "/dev/null";
   const newName = after.exists ? `b/${basename(after.path)}` : "/dev/null";
-  let body = formatHunks(lcsOps(splitLines(before.content), splitLines(after.content)));
-  if (!body && (before.truncated || after.truncated)) body = "# diff incomplete: file snapshot was truncated; changed content may be outside captured prefix";
+  let body = formatHunks(lcsOps(splitLines(beforeText), splitLines(afterText)));
+  if (!body && !complete) body = "# diff incomplete: file snapshot was truncated; changed content may be outside captured prefix";
   const diff = [`--- ${oldName}`, `+++ ${newName}`, body].filter(Boolean).join("\n");
-  return { path: after.path, kind, before, after, unifiedDiff: diff, truncated: before.truncated || after.truncated };
+  return { path: after.path, kind, before: publicSnapshot(before), after: publicSnapshot(after), unifiedDiff: diff, truncated: before.truncated || after.truncated };
+}
+
+function publicSnapshot(snapshot: FileSnapshot): FileSnapshot {
+  const { fullContent: _private, ...safe } = snapshot;
+  return safe;
 }
 
 export function createDiffBundle(before: Map<string, FileSnapshot>, after: Map<string, FileSnapshot>, maxChars: number): DiffBundle {
