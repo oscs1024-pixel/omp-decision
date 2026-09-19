@@ -2,6 +2,7 @@ import type { ExtensionAPI, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import { AuditRecorder } from "../src/audit/recorder.js";
 import { InMemoryAuditStore } from "../src/audit/store.js";
 import { loadDecisionConfig } from "../src/config/loader.js";
+import { registerDiscoveryTools } from "../src/discovery/tools.js";
 import { PolicyEngine } from "../src/policy/engine.js";
 import { JevDecisionProvider } from "../src/providers/jev/provider.js";
 import { DecisionProviderRegistry } from "../src/providers/registry.js";
@@ -84,4 +85,5 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   pi.on("session_shutdown", () => lifecycle.clear());
 
   registerDecisionCommands(pi, state, auditStore);
+  registerDiscoveryTools(pi);
 }
