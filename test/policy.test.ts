@@ -52,3 +52,11 @@ test("user deny, ask and allow precedence is deterministic", () => {
   });
   assert.equal(engine.evaluate(call).action, "deny");
 });
+
+test("safe-looking commands with shell composition do not use fast path", () => {
+  const engine = new PolicyEngine(config);
+  assert.equal(engine.evaluate(bash("ls -la && echo side-effect")).action, "review");
+  assert.equal(engine.evaluate(bash("git diff | tee /tmp/diff")).action, "review");
+  assert.equal(engine.evaluate(bash("pwd > /tmp/location")).action, "review");
+  assert.equal(engine.evaluate(bash("ls $(touch marker)")).action, "review");
+});
