@@ -219,7 +219,11 @@ test("VerifyStage: rejects undeclared workspace mutations before semantic review
     toolCallId: "undeclared", call: writeCall,
     canonicalTargets: ["/workspace/src/index.ts"], relativeTargets: ["src/index.ts"],
     initialAfterReviewers: [], reviewerConfigs: [],
-    workspaceChanges: { files: ["src/index.ts", ".env"], undeclared: [".env"] },
+    workspaceChanges: {
+      files: ["src/index.ts", ".env"],
+      undeclared: [".env"],
+      effects: [{ kind: "modified" as const, path: ".env", declared: false }],
+    },
     startedAt: Date.now(),
   };
   const result = await stage.verify(context, { content: [], details: undefined, isError: false });
@@ -227,6 +231,48 @@ test("VerifyStage: rejects undeclared workspace mutations before semantic review
   assert.equal(result.findings?.[0]?.category, "undeclared_mutation");
   assert.match(result.diagnostic ?? "", /\.env/);
   assert.equal(providerCalls, 0);
+});
+
+test("VerifyStage: undeclared effects still reject when tool reports an error", async () => {
+  const review = new ReviewRuntime(new DecisionProviderRegistry(), 1000);
+  const stage = new VerifyStage(review, 24000, 16000);
+  const context = {
+    toolCallId: "failed-side-effect", call: writeCall,
+    canonicalTargets: ["/workspace/src/index.ts"], relativeTargets: ["src/index.ts"],
+    initialAfterReviewers: [], reviewerConfigs: [],
+    workspaceChanges: {
+      files: [".env"], undeclared: [".env"],
+      effects: [{ kind: "modified" as const, path: ".env", declared: false }],
+    },
+    startedAt: Date.now(),
+  };
+  const result = await stage.verify(context, { content: [], details: undefined, isError: true });
+  assert.equal(result.status, "rejected");
+  assert.equal(result.findings?.[0]?.category, "undeclared_mutation");
+});
+
+test("VerifyStage: observed files drive reviewer selection when no declared diff exists", async () => {
+  const providers = new DecisionProviderRegistry();
+  let calls = 0;
+  providers.register(new FakeDecisionProvider(() => { calls++; return { action: "pass", reasonCode: "ok" }; }));
+  const review = new ReviewRuntime(providers, 1000);
+  const reviewer: ReviewerConfig = {
+    id: "observed", name: "Observed", enabled: true, tools: ["write"], trigger: "after",
+    provider: "fake", failureMode: "closed", filePatterns: ["src/**/*.ts"],
+  };
+  const stage = new VerifyStage(review, 24000, 16000);
+  const context = {
+    toolCallId: "observed", call: writeCall, canonicalTargets: [], relativeTargets: [],
+    initialAfterReviewers: [], reviewerConfigs: [reviewer],
+    workspaceChanges: {
+      files: ["src/actual.ts"], undeclared: [],
+      effects: [{ kind: "modified" as const, path: "src/actual.ts", declared: true }],
+    },
+    startedAt: Date.now(),
+  };
+  const result = await stage.verify(context, { content: [], details: undefined, isError: false });
+  assert.equal(result.status, "passed");
+  assert.equal(calls, 1);
 });
 
 test("TraceEvalStage: records policy, before and after events", () => {
