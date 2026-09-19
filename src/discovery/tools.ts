@@ -1,17 +1,16 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { Type } from "@oh-my-pi/pi-coding-agent/extensibility/typebox";
-import { DiscoveryRuntime, defaultSkillRoots } from "./runtime.js";
+ import { DiscoveryRuntime, defaultSkillRoots } from "./runtime.js";
 
-const Params = Type.Object({
-  query: Type.String({ description: "Describe the capability you need." }),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
-});
-
+ 
 function result(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }], details: value };
 }
 
 export function registerDiscoveryTools(pi: ExtensionAPI): void {
+  const Params = pi.zod.object({
+    query: pi.zod.string().describe("Describe the capability you need."),
+    limit: pi.zod.number().int().min(1).max(20).optional(),
+  });
   const runtime = new DiscoveryRuntime({
     list: () => pi.getAllTools()
       .filter((tool) => tool.name !== "decision_find_tools" && tool.name !== "decision_find_skill")
