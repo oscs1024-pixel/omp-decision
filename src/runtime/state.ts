@@ -9,6 +9,11 @@ export function createRuntimeState(loaded: LoadedDecisionConfig): DecisionRuntim
   return { enabled: loaded.config.enabled, loaded };
 }
 
+export function reloadRuntimeState(state: DecisionRuntimeState, loaded: LoadedDecisionConfig): void {
+  state.loaded = loaded;
+  state.enabled = loaded.config.enabled;
+}
+
 export function setRuntimeEnabled(state: DecisionRuntimeState, enabled: boolean): void {
   state.enabled = enabled;
 }
