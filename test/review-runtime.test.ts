@@ -64,3 +64,14 @@ test("failed tool execution skips after review", async () => {
   const outcome = await runtime.after(call, { content: [], details: undefined, isError: true }, [reviewer()]);
   assert.equal(outcome.status, "skipped");
 });
+
+test("review timeout completes even when provider ignores AbortSignal", async () => {
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider(() => new Promise(() => {})));
+  const runtime = new ReviewRuntime(providers, 20);
+  const started = Date.now();
+  const outcome = await runtime.before(call, [reviewer({ failureMode: "closed" })]);
+  assert.equal(outcome.action, "deny");
+  assert.equal(outcome.reviewers[0]?.reasonCode, "provider_aborted_or_timeout");
+  assert.ok(Date.now() - started < 500);
+});
