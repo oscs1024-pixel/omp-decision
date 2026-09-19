@@ -49,6 +49,7 @@ test("DecisionStage: evaluates before call and summarizes decision", async () =>
   assert.equal(decision.action, "allow");
   assert.equal(decision.confidence, 0.95);
   assert.equal(decision.reviewers.length, 1);
+  assert.equal(decision.provider, "fake");
 });
 
 test("PolicyGateStage: handles preflight policy decisions and decision gate", () => {
@@ -127,6 +128,7 @@ test("VerifyStage: skips when tool failed and verifies successful diffs", async 
     canonicalTargets: ["/workspace/src/index.ts"],
     relativeTargets: ["src/index.ts"],
     afterReviewers: [reviewer],
+    reviewerConfigs: [reviewer],
     startedAt: Date.now(),
   };
 
@@ -139,7 +141,7 @@ test("VerifyStage: skips when tool failed and verifies successful diffs", async 
   assert.equal(verified.status, "passed");
 });
 
-test("VerifyStage: no changes detected short-circuits with passed", async () => {
+test("VerifyStage: no changes detected is explicitly skipped", async () => {
   const providers = new DecisionProviderRegistry();
   let providerCalls = 0;
   providers.register(new FakeDecisionProvider(() => {
@@ -167,14 +169,41 @@ test("VerifyStage: no changes detected short-circuits with passed", async () => 
     canonicalTargets: ["/workspace/a.ts"],
     relativeTargets: ["a.ts"],
     afterReviewers: [reviewer],
+    reviewerConfigs: [reviewer],
     preSnapshots: pre,
     startedAt: Date.now(),
   };
 
   const result = await stage.verify(execContext, { content: [], details: undefined, isError: false }, post);
-  assert.equal(result.status, "passed");
+  assert.equal(result.status, "skipped");
   assert.equal(result.reviewers[0]?.reasonCode, "no_changes_detected");
   assert.equal(providerCalls, 0);
+});
+
+test("VerifyStage: reselects reviewers using actual changed files", async () => {
+  const providers = new DecisionProviderRegistry();
+  let providerCalls = 0;
+  providers.register(new FakeDecisionProvider(() => {
+    providerCalls++;
+    return { action: "pass", reasonCode: "verified" };
+  }));
+  const review = new ReviewRuntime(providers, 1000);
+  const actualReviewer: ReviewerConfig = {
+    id: "actual", name: "Actual file reviewer", enabled: true, tools: ["write"], trigger: "after",
+    provider: "fake", failureMode: "closed", filePatterns: ["src/**/*.ts"],
+  };
+  const stage = new VerifyStage(review, 24000, 16000);
+  const path = "/workspace/src/actual.ts";
+  const pre = new Map([[path, { path, exists: true, content: "export const x = 1;\n", truncated: false }]]);
+  const post = new Map([[path, { path, exists: true, content: "export const x = 2;\n", truncated: false }]]);
+  const context = {
+    toolCallId: "actual-diff", call: writeCall, canonicalTargets: [path], relativeTargets: ["declared.txt"],
+    afterReviewers: [], reviewerConfigs: [actualReviewer], preSnapshots: pre, startedAt: Date.now(),
+  };
+  const result = await stage.verify(context, { content: [], details: undefined, isError: false }, post);
+  assert.equal(result.status, "passed");
+  assert.equal(providerCalls, 1);
+  assert.equal(result.reviewers[0]?.reviewerId, "actual");
 });
 
 test("TraceEvalStage: records policy, before and after events", () => {
