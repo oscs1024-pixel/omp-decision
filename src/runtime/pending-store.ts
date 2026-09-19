@@ -1,9 +1,11 @@
+import type { FileSnapshot } from "../diff/types.js";
 import type { BeforeReviewOutcome, ReviewerConfig, ToolCall } from "../review/types.js";
 
 export interface PendingToolCall {
   call: ToolCall;
   afterReviewers: ReviewerConfig[];
   beforeOutcome: BeforeReviewOutcome;
+  snapshots?: Map<string, FileSnapshot>;
 }
 
 export class PendingToolCallStore {
