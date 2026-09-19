@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-
 export interface WorkspaceBaseline {
   kind: "git";
   cwd: string;
@@ -17,7 +17,15 @@ export interface WorkspaceChanges {
 async function gitChangedFiles(cwd: string): Promise<Set<string> | undefined> {
   try {
     const { stdout: root } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd });
-    if (root.trim() !== cwd.replace(/[\\/]+$/, "")) return undefined;
+    const normRoot = root.trim().replace(/[\\/]+$/, "");
+    const normCwd = cwd.trim().replace(/[\\/]+$/, "");
+    if (normRoot !== normCwd) {
+      const [realRoot, realCwd] = await Promise.all([
+        realpath(normRoot).catch(() => normRoot),
+        realpath(normCwd).catch(() => normCwd),
+      ]);
+      if (realRoot !== realCwd) return undefined;
+    }
     const { stdout } = await execFileAsync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
       cwd,
       maxBuffer: 4 * 1024 * 1024,
@@ -25,7 +33,9 @@ async function gitChangedFiles(cwd: string): Promise<Set<string> | undefined> {
     const files = new Set<string>();
     for (const record of stdout.split("\0")) {
       if (!record) continue;
-      const path = record.slice(3).trim();
+      const path = (/^[A-Z?]{1,2}\s+/.test(record) || record.startsWith(" "))
+        ? record.slice(3).trim()
+        : record.trim();
       if (path) files.add(path.replace(/\\/g, "/"));
     }
     return files;

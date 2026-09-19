@@ -11,6 +11,8 @@ import { ReviewRuntime } from "../src/review/runtime.js";
 import { ToolLifecycleRuntime } from "../src/runtime/lifecycle.js";
 import { createRuntimeState, reloadRuntimeState } from "../src/runtime/state.js";
 import { registerDecisionCommands } from "../src/ui/commands.js";
+import { formatUserConfirmation } from "../src/ui/format.js";
+import type { ToolCall } from "../src/review/types.js";
 
 export default function ompDecisionExtension(pi: ExtensionAPI): void {
   const state = createRuntimeState(loadDecisionConfig(process.cwd()));
@@ -49,17 +51,21 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   });
   pi.on("tool_call", async (event, ctx) => {
     if (!state.enabled || (!state.loaded.config.review.enabled && !state.loaded.config.policy.enabled)) return;
+    const call: ToolCall = {
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      input: event.input as Record<string, unknown>,
+      cwd: ctx.cwd,
+      timestamp: Date.now(),
+    };
     const res = await lifecycle.before(
-      {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        input: event.input as Record<string, unknown>,
-        cwd: ctx.cwd,
-        timestamp: Date.now(),
-      },
+      call,
       undefined,
       ctx.hasUI
-        ? (message) => ctx.ui.confirm("omp-decision review", message)
+        ? (reason) => ctx.ui.confirm(
+            "omp-decision: 权限确认 / Permission Confirmation",
+            formatUserConfirmation(call, reason),
+          )
         : undefined,
     );
     if (!res?.block) return;
