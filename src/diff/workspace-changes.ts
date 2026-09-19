@@ -87,7 +87,6 @@ async function gitState(cwd: string): Promise<{ gitRoot: string; status: GitStat
       cwd: gitRoot,
       maxBuffer: 4 * 1024 * 1024,
     });
-    const workspacePrefix = normalizePath(relative(gitRoot, cwd));
     const status = parsePorcelainV1Z(stdout).filter((entry) => {
       const current = resolve(gitRoot, entry.path);
       const original = entry.originalPath ? resolve(gitRoot, entry.originalPath) : undefined;
@@ -97,7 +96,6 @@ async function gitState(cwd: string): Promise<{ gitRoot: string; status: GitStat
       path: normalizePath(relative(cwd, resolve(gitRoot, entry.path))),
       ...(entry.originalPath ? { originalPath: normalizePath(relative(cwd, resolve(gitRoot, entry.originalPath))) } : {}),
     }));
-    void workspacePrefix;
     const paths = new Set<string>();
     for (const entry of status) {
       paths.add(entry.path);
@@ -144,7 +142,7 @@ export class WorkspaceChangeDetector {
       const before = baseline.entries.get(path);
       const after = current.entries.get(path);
       if (before === after) continue;
-      const entry = currentByPath.get(path) ?? { indexStatus: "D", worktreeStatus: " ", path };
+      const entry: GitStatusEntry = currentByPath.get(path) ?? { indexStatus: "D", worktreeStatus: " ", path };
       const declared = isDeclared(path) || Boolean(entry.originalPath && isDeclared(entry.originalPath));
       effects.push({
         kind: effectKind(entry, before, after),
