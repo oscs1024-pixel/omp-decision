@@ -14,7 +14,7 @@ Implementation follows staged delivery:
 6. Audit and observability
 7. Tool and skill discovery
 
-Phase 1 establishes the OMP extension entrypoint, layered configuration, session state, and `/decision status|on|off`.
+Phase 1 establishes the OMP extension entrypoint, layered configuration, session state, and `/decision status|on|off`.\n\nPhase 2 adds the `tool_call -> PendingToolCall -> tool_result` lifecycle, selected-tool reviewer matching, provider abstraction, parallel before/after review, timeout/cancellation handling, failure modes, and agent-visible rejection diagnostics. The real Jev provider is intentionally deferred.
 
 ## Configuration
 
