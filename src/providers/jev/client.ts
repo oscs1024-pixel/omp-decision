@@ -79,7 +79,7 @@ export class JevClient implements JevEvaluationClient {
       state: state as EntryType,
       questions: queryQuestions,
       ...(options.model ? { model: options.model } : {}),
-    }, options.signal ? { signal: options.signal } : {});
+    }, options.signal ? { signal: options.signal } : undefined);
 
     const answers: Record<string, JevAnswer> = {};
     for (const id of Object.keys(normalizedQuestions)) {
@@ -89,7 +89,8 @@ export class JevClient implements JevEvaluationClient {
         const value = typeof record.choice === "string" ? record.choice : typeof record.value === "string" ? record.value : undefined;
         if (value) {
           const confidence = typeof record.confidence === "number" ? record.confidence : undefined;
-          const distribution = record.distribution && typeof record.distribution === "object" ? record.distribution as Record<string, number> : undefined;
+          const distributionSource = record.probabilities ?? record.distribution;
+          const distribution = distributionSource && typeof distributionSource === "object" ? distributionSource as Record<string, number> : undefined;
           answers[id] = {
             type: "choice",
             value,
