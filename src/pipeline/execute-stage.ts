@@ -14,13 +14,14 @@ export class ExecuteStage {
     this.#snapshots = new SnapshotManager(maxFileContextChars);
   }
 
-  async prepare(
-    call: ToolCall,
-    afterReviewers: ReviewerConfig[],
-    decision?: PipelineDecision,
-    gate?: PolicyGateResult,
-    reviewerConfigs: ReviewerConfig[] = afterReviewers,
-  ): Promise<{ error?: string; context?: ExecutionContext }> {
+  async prepare(options: {
+    call: ToolCall;
+    initialAfterReviewers: ReviewerConfig[];
+    reviewerConfigs?: ReviewerConfig[];
+    preflight?: PolicyGateResult | undefined;
+  }): Promise<{ error?: string; context?: ExecutionContext }> {
+    const { call, initialAfterReviewers, preflight } = options;
+    const reviewerConfigs = options.reviewerConfigs ?? initialAfterReviewers;
     const targets = extractMutationTargets(call.toolName, call.input, call.cwd);
     const resolvedTargets = await Promise.all(targets.map((target) => resolveMutationTarget(call.cwd, target)));
 
@@ -34,7 +35,7 @@ export class ExecuteStage {
     const relativeTargets = targets.map((t) => relative(call.cwd, t).replace(/\\/g, "/"));
     const canonicalTargets = resolvedTargets.map((target) => target.canonicalPath);
 
-    const preSnapshots = canonicalTargets.length > 0 && afterReviewers.length > 0
+    const preSnapshots = canonicalTargets.length > 0 && initialAfterReviewers.length > 0
       ? await this.#snapshots.captureMany(canonicalTargets)
       : undefined;
 
@@ -43,10 +44,9 @@ export class ExecuteStage {
       call,
       canonicalTargets,
       relativeTargets,
-      afterReviewers,
+      initialAfterReviewers,
       reviewerConfigs,
-      decision,
-      gate,
+      preflight,
       preSnapshots,
       startedAt: Date.now(),
     };
