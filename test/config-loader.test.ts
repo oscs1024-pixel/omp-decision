@@ -76,3 +76,16 @@ test("project reviewer configuration is parsed", () => {
     timeoutMs: 2500
   });
 });
+
+test("invalid policy commandPattern is rejected at config load", () => {
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-regex-"));
+  const home = join(root, "home");
+  const cwd = join(root, "project");
+  mkdirSync(join(cwd, ".omp"), { recursive: true });
+  writeFileSync(join(cwd, ".omp", "decision.json"), JSON.stringify({
+    policy: { rules: [{ id: "bad", tools: ["bash"], action: "deny", reason: "bad regex", commandPattern: "[unterminated" }] }
+  }));
+  const loaded = loadDecisionConfig(cwd, home);
+  assert.equal(loaded.config.policy.rules.length, 0);
+  assert.ok(loaded.warnings.some((warning) => warning.includes("commandPattern is invalid")));
+});
