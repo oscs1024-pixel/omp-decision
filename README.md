@@ -14,9 +14,13 @@ Implementation follows staged delivery:
 6. Audit and observability
 7. Tool and skill discovery
 
-Phase 1 establishes the OMP extension entrypoint, layered configuration, session state, and `/decision status|on|off`.\n\nPhase 2 adds the `tool_call -> PendingToolCall -> tool_result` lifecycle, selected-tool reviewer matching, provider abstraction, parallel before/after review, timeout/cancellation handling, failure modes, and agent-visible rejection diagnostics. The real Jev provider is intentionally deferred.
+Phase 1 establishes the OMP extension entrypoint, layered configuration, session state, and `/decision status|on|off`.
+
+Phase 2 adds the `tool_call -> PendingToolCall -> tool_result` lifecycle, selected-tool reviewer matching, provider abstraction, parallel before/after review, timeout/cancellation handling, failure modes, and agent-visible rejection diagnostics. The real Jev provider is intentionally deferred.
 
 Phase 3 adds diff-aware after-review for `edit` and `write`: filesystem targets are snapshotted immediately before execution, captured again after successful execution, normalized for CRLF/LF, converted to bounded unified diffs, and attached to the provider's `result.reviewContext.diff`. New/deleted/unchanged files, Unicode, multi-target edits, read failures, and payload truncation are represented explicitly.
+
+Phase 4 adds a deterministic policy engine before semantic review. Built-in hard-deny rules cannot be overridden by user allow rules or providers. Explicit user deny/ask/allow rules are evaluated next, followed by safe read-only fast paths; unmatched calls continue to semantic review.
 
 ## Configuration
 
