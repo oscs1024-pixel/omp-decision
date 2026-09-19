@@ -47,13 +47,14 @@ export class JevClient implements JevEvaluationClient {
       state,
       questions: { decision: choice(question.instructions, question.criteria) },
       ...(options.model ? { model: options.model } : {}),
-    }, { signal: options.signal });
+    }, options.signal ? { signal: options.signal } : undefined);
     const raw = response?.answers?.decision;
     if (!raw || typeof raw !== "object") throw new Error("Jev response missing decision answer");
     const value = raw.choice ?? raw.value;
     if (typeof value !== "string") throw new Error("Jev decision answer is not a choice");
     const confidence = typeof raw.confidence === "number" ? raw.confidence : undefined;
-    const distribution = raw.distribution && typeof raw.distribution === "object" ? raw.distribution as Record<string, number> : undefined;
+    const distributionSource = raw.probabilities ?? raw.distribution;
+    const distribution = distributionSource && typeof distributionSource === "object" ? distributionSource as Record<string, number> : undefined;
     return {
       answers: { decision: { type: "choice", value, ...(confidence === undefined ? {} : { confidence }), ...(distribution ? { distribution } : {}) } },
       model: typeof response.model === "string" ? response.model : "jev-latest",
