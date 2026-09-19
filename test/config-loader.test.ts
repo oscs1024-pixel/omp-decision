@@ -43,3 +43,36 @@ test("invalid values fall back without throwing", () => {
   assert.equal(loaded.config.review.maxPayloadChars, 24000);
   assert.equal(loaded.warnings.length, 1);
 });
+
+test("project reviewer configuration is parsed", () => {
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-"));
+  const home = join(root, "home");
+  const cwd = join(root, "repo");
+  mkdirSync(join(cwd, ".omp"), { recursive: true });
+  writeFileSync(join(cwd, ".omp", "decision.json"), JSON.stringify({
+    review: {
+      reviewers: [{
+        id: "security",
+        name: "Security",
+        tools: ["edit", "write"],
+        trigger: "after",
+        provider: "jev",
+        failureMode: "open",
+        timeoutMs: 2500
+      }]
+    }
+  }));
+
+  const loaded = loadDecisionConfig(cwd, home);
+  assert.equal(loaded.config.review.reviewers.length, 1);
+  assert.deepEqual(loaded.config.review.reviewers[0], {
+    id: "security",
+    name: "Security",
+    enabled: true,
+    tools: ["edit", "write"],
+    trigger: "after",
+    provider: "jev",
+    failureMode: "open",
+    timeoutMs: 2500
+  });
+});
