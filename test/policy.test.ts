@@ -86,3 +86,12 @@ test("mutation target matching protectedPaths forces ask", () => {
   assert.equal(result.reasonCode, "protected_path");
   assert.match(result.reason, /\.env\.production/);
 });
+
+test("shell expansion and background operators never use deterministic safe path", () => {
+  const engine = new PolicyEngine(config);
+  assert.equal(engine.evaluate(bash("ls $HOME")).action, "review");
+  assert.equal(engine.evaluate(bash("ls ${HOME}")).action, "review");
+  assert.equal(engine.evaluate(bash("ls &")).action, "review");
+  assert.equal(engine.evaluate(bash("pwd\r")).action, "review");
+  assert.equal(engine.evaluate(bash("git diff `touch marker`")).action, "review");
+});

@@ -96,7 +96,7 @@ export class ToolLifecycleRuntime {
 
     // Stage 1: Semantic Decision & Hazard Evaluation
     let decision: PipelineDecision | undefined;
-    if (policyResult?.action !== "allow") {
+    if (policyResult?.action !== "allow" && policyResult?.action !== "ask") {
       decision = await this.decisionStage.evaluate(call, signal, execContext.relativeTargets);
       this.traceStage.record({ phase: "before", call, decision });
 

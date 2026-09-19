@@ -18,7 +18,7 @@ export class JevDecisionProvider implements DecisionProvider {
   }
 
   async decide(request: DecisionProviderRequest): Promise<DecisionProviderResult> {
-    const state = buildReviewState(request);
+    const state = boundState(buildReviewState(request), 32_000);
     const hasRules = Boolean(request.rules);
     const changedFiles = request.result?.reviewContext?.diff?.files.map((f) => f.path) ?? [];
     const response = await this.#client.evaluate(state, buildQuestions(request.phase, hasRules, changedFiles), {
@@ -183,4 +183,28 @@ function sanitize(value: unknown, depth = 0): unknown {
     else output[key] = sanitize(child, depth + 1);
   }
   return output;
+}
+
+function boundState(state: Record<string, unknown>, maxChars: number): Record<string, unknown> {
+  const encoded = JSON.stringify(state);
+  if (encoded.length <= maxChars) return state;
+  const diff = state.actualFilesystemDiff;
+  const bounded: Record<string, unknown> = {
+    phase: state.phase,
+    tool: state.tool,
+    input: sanitize(state.input),
+    ...(state.toolResult ? { toolResult: state.toolResult } : {}),
+  };
+  if (diff && typeof diff === "object") {
+    const value = diff as Record<string, unknown>;
+    const budget = Math.max(1000, maxChars - JSON.stringify(bounded).length - 1000);
+    bounded.actualFilesystemDiff = {
+      ...value,
+      text: typeof value.text === "string" && value.text.length > budget ? value.text.slice(0, budget) + "\n# ... provider payload truncated ..." : value.text,
+      truncated: true,
+    };
+  }
+  const final = JSON.stringify(bounded);
+  if (final.length <= maxChars) return bounded;
+  return { phase: state.phase, tool: state.tool, payloadTruncated: true, summary: final.slice(0, maxChars - 100) };
 }

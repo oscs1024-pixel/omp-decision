@@ -166,3 +166,40 @@ test("edit/write lifecycle blocks canonical targets outside workspace", async ()
   assert.match(blocked?.reason ?? "", /workspace_boundary/);
   assert.equal(lifecycle.pending.size, 0);
 });
+
+test("approved policy ask skips semantic before review", async () => {
+  const { PolicyEngine } = await import("../src/policy/engine.js");
+  let providerCalls = 0;
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider(() => {
+    providerCalls++;
+    return { action: "deny", reasonCode: "should_not_run" };
+  }));
+  const shellReviewer: ReviewerConfig = { ...reviewer, tools: ["bash"], trigger: "before" };
+  const lifecycle = new ToolLifecycleRuntime(
+    new ReviewRuntime(providers, 1000),
+    [shellReviewer],
+    16000,
+    24000,
+    new PolicyEngine({ enabled: true, builtinRules: false, rules: [{
+      id: "confirm-publish",
+      tools: ["bash"],
+      action: "ask",
+      reason: "Confirm command",
+      commandPattern: "^echo confirm$",
+      enabled: true,
+    }] }),
+  );
+  let confirmations = 0;
+  const result = await lifecycle.before({
+    toolCallId: "policy-ask",
+    toolName: "bash",
+    input: { command: "echo confirm" },
+    cwd: "/repo",
+    timestamp: Date.now(),
+  }, undefined, async () => { confirmations++; return true; });
+  assert.equal(result, undefined);
+  assert.equal(confirmations, 1);
+  assert.equal(providerCalls, 0);
+  assert.equal(lifecycle.pending.size, 1);
+});

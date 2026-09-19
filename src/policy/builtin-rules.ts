@@ -13,7 +13,7 @@ const DANGEROUS_SHELL: Array<{ id: string; pattern: RegExp; reason: string }> = 
   { id: "shell.filesystem-format", pattern: /(^|[;&|]\s*)mkfs(?:\.[a-z0-9]+)?(?:\s|$)/i, reason: "formatting filesystems is blocked" },
 ];
 
-const SHELL_META = /(?:&&|\|\||[;|<>\n]|\$\(|\x60)/;
+const SHELL_META = /(?:&&|\|\||[;&|<>\r\n`$])/;
 
 const SAFE_SHELL: Array<{ id: string; pattern: RegExp; reason: string }> = [
   { id: "shell.git-status", pattern: /^\s*git\s+status(?:\s+--(?:short|porcelain(?:=v[12])?|branch))*\s*$/i, reason: "git status is read-only" },

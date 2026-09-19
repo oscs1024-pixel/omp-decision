@@ -115,3 +115,24 @@ test("bounded context extracts lines around diff hunks", () => {
   assert.ok(ctx.context.includes("50: content line 50"));
   assert.ok(ctx.context.includes("--- lines"));
 });
+
+test("snapshot manager refuses binary content", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-binary-"));
+  const path = join(root, "asset.bin");
+  writeFileSync(path, Buffer.from([1, 2, 0, 4, 5]));
+  const snap = await new SnapshotManager(100).capture(path);
+  assert.equal(snap.binary, true);
+  assert.equal(snap.content, "");
+  assert.match(snap.readError ?? "", /binary/);
+});
+
+test("snapshot manager enforces a hard capture byte limit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-oversized-"));
+  const path = join(root, "huge.txt");
+  writeFileSync(path, "x".repeat(101));
+  const snap = await new SnapshotManager(10, 100).capture(path);
+  assert.equal(snap.oversized, true);
+  assert.equal(snap.fullContent, undefined);
+  assert.equal(snap.content, "");
+  assert.match(snap.readError ?? "", /snapshot limit/);
+});

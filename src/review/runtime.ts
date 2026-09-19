@@ -99,10 +99,11 @@ export class ReviewRuntime {
     signal?: AbortSignal,
     files?: readonly string[],
   ): Promise<AfterReviewOutcome> {
+    const selected = this.select(reviewers, call.toolName, "after", files);
     if (result.isError) {
       return {
         status: "skipped",
-        reviewers: reviewers.map((reviewer) => ({
+        reviewers: selected.map((reviewer) => ({
           reviewerId: reviewer.id,
           reviewerName: reviewer.name,
           phase: "after",
@@ -113,7 +114,7 @@ export class ReviewRuntime {
       };
     }
 
-    const selected = this.select(reviewers, call.toolName, "after", files);
+
     if (selected.length === 0) return { status: "skipped", reviewers: [] };
     const results = await Promise.all(selected.map((reviewer) => this.#runAfterReviewer(call, result, reviewer, signal)));
     const rejected = results.filter((entry) => entry.status === "rejected");

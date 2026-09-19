@@ -89,3 +89,19 @@ test("invalid policy commandPattern is rejected at config load", () => {
   assert.equal(loaded.config.policy.rules.length, 0);
   assert.ok(loaded.warnings.some((warning) => warning.includes("commandPattern is invalid")));
 });
+
+test("invalid policy rule does not reserve its id", () => {
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-rule-id-"));
+  const home = join(root, "home");
+  const cwd = join(root, "project");
+  mkdirSync(join(cwd, ".omp"), { recursive: true });
+  writeFileSync(join(cwd, ".omp", "decision.json"), JSON.stringify({
+    policy: { rules: [
+      { id: "same", tools: ["bash"], action: "deny", reason: "invalid", commandPattern: "[" },
+      { id: "same", tools: ["bash"], action: "ask", reason: "valid", commandPattern: "^echo" }
+    ] }
+  }));
+  const loaded = loadDecisionConfig(cwd, home);
+  assert.equal(loaded.config.policy.rules.length, 1);
+  assert.equal(loaded.config.policy.rules[0]?.action, "ask");
+});

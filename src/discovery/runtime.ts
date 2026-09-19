@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { rankCandidates } from "./ranking.js";
 import type { JevEvaluationClient } from "../providers/jev/types.js";
 import type { DiscoveryCandidate, DiscoveryMatch, DiscoveryResult } from "./types.js";
@@ -145,17 +145,24 @@ function frontmatter(content: string, key: string): string | undefined {
 }
 
 function firstText(content: string): string | undefined {
-  return content.split("\n").map((line) => line.trim()).find((line) => line && !line.startsWith("#") && line !== "---");
+  const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "");
+  return body.split("\n").map((line) => line.trim()).find((line) => line && !line.startsWith("#"));
 }
 
 export function defaultSkillRoots(cwd: string): string[] {
-  return [
+  const roots = [
     join(cwd, ".omp", "skills"),
     join(cwd, "skills"),
     join(cwd, ".pi", "skills"),
-    join(process.env.HOME ?? "", ".omp", "skills"),
-    join(process.env.HOME ?? "", ".omp", "agent", "skills"),
-    join(process.env.HOME ?? "", ".agents", "skills"),
-    join(process.env.HOME ?? "", ".pi", "agent", "skills"),
-  ].filter(Boolean);
+  ];
+  const home = process.env.HOME;
+  if (home) {
+    roots.push(
+      join(home, ".omp", "skills"),
+      join(home, ".omp", "agent", "skills"),
+      join(home, ".agents", "skills"),
+      join(home, ".pi", "agent", "skills"),
+    );
+  }
+  return roots;
 }

@@ -128,3 +128,16 @@ test("loadReviewerRules reads and concatenates markdown rule files", async () =>
   assert.ok(rules && rules.includes("No logging credentials."));
   assert.ok(rules && rules.includes("Layered design."));
 });
+
+test("failed tool reports only reviewers selected for after phase", async () => {
+  const providers = new DecisionProviderRegistry();
+  const runtime = new ReviewRuntime(providers, 1000);
+  const outcome = await runtime.after(call, { content: [], details: undefined, isError: true }, [
+    reviewer({ id: "after", trigger: "after" }),
+    reviewer({ id: "before", trigger: "before" }),
+    reviewer({ id: "other", trigger: "after", tools: ["write"] }),
+  ]);
+  assert.equal(outcome.status, "skipped");
+  assert.deepEqual(outcome.reviewers.map((entry) => entry.reviewerId), ["after"]);
+  assert.equal(outcome.reviewers[0]?.reasonCode, "tool_failed");
+});
