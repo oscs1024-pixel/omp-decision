@@ -24,6 +24,9 @@ export interface ToolExecutionResult {
   content: unknown[];
   details: unknown;
   isError: boolean;
+  reviewContext?: {
+    diff?: import("../diff/types.js").DiffBundle;
+  };
 }
 
 export interface ReviewerResult {
