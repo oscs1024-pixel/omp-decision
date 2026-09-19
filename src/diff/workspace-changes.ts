@@ -92,11 +92,11 @@ async function gitState(cwd: string): Promise<{ gitRoot: string; status: GitStat
     const status = parsePorcelainV1Z(stdout).filter((entry) => {
       const current = resolve(gitRoot, entry.path);
       const original = entry.originalPath ? resolve(gitRoot, entry.originalPath) : undefined;
-      return isInside(cwd, current) || Boolean(original && isInside(cwd, original));
+      return isInside(realCwd, current) || Boolean(original && isInside(realCwd, original));
     }).map((entry) => ({
       ...entry,
-      path: normalizePath(relative(cwd, resolve(gitRoot, entry.path))),
-      ...(entry.originalPath ? { originalPath: normalizePath(relative(cwd, resolve(gitRoot, entry.originalPath))) } : {}),
+      path: normalizePath(relative(realCwd, resolve(gitRoot, entry.path))),
+      ...(entry.originalPath ? { originalPath: normalizePath(relative(realCwd, resolve(gitRoot, entry.originalPath))) } : {}),
     }));
     const paths = new Set<string>();
     for (const entry of status) {
@@ -104,7 +104,7 @@ async function gitState(cwd: string): Promise<{ gitRoot: string; status: GitStat
       if (entry.originalPath) paths.add(entry.originalPath);
     }
     const entries = new Map<string, string>();
-    await Promise.all([...paths].map(async (path) => entries.set(path, await fingerprint(resolve(cwd, path)))));
+    await Promise.all([...paths].map(async (path) => entries.set(path, await fingerprint(resolve(realCwd, path)))));
     return { gitRoot, status, entries };
   } catch {
     return undefined;
