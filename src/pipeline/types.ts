@@ -35,6 +35,7 @@ export interface ExecutionContext {
   decision?: PipelineDecision | undefined;
   gate?: PolicyGateResult | undefined;
   afterReviewers: ReviewerConfig[];
+  reviewerConfigs: ReviewerConfig[];
   startedAt: number;
 }
 
