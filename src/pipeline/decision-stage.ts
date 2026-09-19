@@ -40,7 +40,7 @@ export class DecisionStage {
       tokens: totalTokens > 0 ? totalTokens : undefined,
       costUsd: totalCostUsd > 0 ? totalCostUsd : undefined,
       latencyMs: elapsed,
-      provider: primary ? "jev" : "none",
+      provider: primary?.provider ?? "none",
       reviewers: outcome.reviewers,
     };
   }
