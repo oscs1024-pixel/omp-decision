@@ -78,3 +78,21 @@ test("truncated snapshots are not reported as confidently unchanged", () => {
   assert.equal(diff.kind, "modified");
   assert.match(diff.unifiedDiff, /diff incomplete/);
 });
+
+test("large-file changes after the public prefix produce real bounded hunks", async () => {
+  const root = mkdtempSync(join(tmpdir(), "omp-decision-large-diff-"));
+  const path = join(root, "large.txt");
+  const prefix = Array.from({ length: 200 }, (_, i) => `line-${i}`).join("\n") + "\n";
+  writeFileSync(path, prefix + "old-tail\n");
+  const snapshots = new SnapshotManager(64);
+  const before = await snapshots.capture(path);
+  writeFileSync(path, prefix + "new-tail\n");
+  const after = await snapshots.capture(path);
+  const diff = createFileDiff(before, after);
+  assert.equal(diff.kind, "modified");
+  assert.match(diff.unifiedDiff, /-old-tail/);
+  assert.match(diff.unifiedDiff, /\+new-tail/);
+  assert.equal(diff.before.fullContent, undefined);
+  assert.equal(diff.after.fullContent, undefined);
+  assert.ok(diff.unifiedDiff.length < prefix.length);
+});
