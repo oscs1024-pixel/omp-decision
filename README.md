@@ -81,3 +81,7 @@ Example:
 ## Audit and observability
 
 Phase 6 records policy, before-review, and after-review decisions in a bounded in-memory audit store that is not injected into model context. Entries contain decision/reason metadata, reviewer confidence and latency, and diff metadata only (never diff contents). Use `/decision log [limit]` to inspect recent decisions and `/decision inspect <id>` for one record. Explicit after-review rejection diagnostics may include the audit ID in tool-result details for correlation.
+
+## Tool and skill discovery
+
+Phase 7 registers two read-only, discoverable agent tools: `decision_find_tools` and `decision_find_skill`. Tool discovery ranks the current OMP tool catalog; skill discovery scans project/user OMP and Pi skill directories, parses SKILL.md metadata, deduplicates candidates, and returns bounded ranked matches. The first implementation intentionally uses a deterministic lexical ranker so discovery remains available without Jev credentials; the runtime boundary is separate from the OMP adapter so a semantic discovery provider can be added without changing tool registration.
