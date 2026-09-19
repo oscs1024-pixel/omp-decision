@@ -16,7 +16,7 @@ Implementation follows staged delivery:
 
 Phase 1 establishes the OMP extension entrypoint, layered configuration, session state, and `/decision status|on|off`.
 
-Phase 2 adds the `tool_call -> PendingToolCall -> tool_result` lifecycle, selected-tool reviewer matching, provider abstraction, parallel before/after review, timeout/cancellation handling, failure modes, and agent-visible rejection diagnostics. The real Jev provider is intentionally deferred.
+Phase 2 adds the `tool_call -> PendingToolCall -> tool_result` lifecycle, selected-tool reviewer matching, provider abstraction, parallel before/after review, timeout/cancellation handling, failure modes, and agent-visible rejection diagnostics. Provider execution is abstracted behind DecisionProvider; the Jev provider is implemented in Phase 5.
 
 Phase 3 adds diff-aware after-review for `edit` and `write`: filesystem targets are snapshotted immediately before execution, captured again after successful execution, normalized for CRLF/LF, converted to bounded unified diffs, and attached to the provider's `result.reviewContext.diff`. New/deleted/unchanged files, Unicode, multi-target edits, read failures, and payload truncation are represented explicitly.
 
@@ -85,3 +85,7 @@ Phase 6 records policy, before-review, and after-review decisions in a bounded i
 ## Tool and skill discovery
 
 Phase 7 registers two read-only, discoverable agent tools: `decision_find_tools` and `decision_find_skill`. Tool discovery ranks the current OMP tool catalog; skill discovery scans project/user OMP and Pi skill directories, parses SKILL.md metadata, deduplicates candidates, and returns bounded ranked matches. The first implementation intentionally uses a deterministic lexical ranker so discovery remains available without Jev credentials; the runtime boundary is separate from the OMP adapter so a semantic discovery provider can be added without changing tool registration.
+
+## Release hardening
+
+The main branch includes CI for Node 22 running TypeScript checking and the full test suite. Workspace mutation targets are canonicalized to prevent symlink escapes. Provider calls have enforced timeouts even when a provider ignores AbortSignal. Shell safe-fast-path rules reject command composition/metacharacters. Invalid policy regexes are rejected during config load. Truncated file snapshots are explicitly treated as incomplete evidence rather than confidently unchanged.
