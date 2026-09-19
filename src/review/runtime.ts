@@ -34,6 +34,18 @@ function timeoutSignal(parent: AbortSignal | undefined, timeoutMs: number): { si
   };
 }
 
+async function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw signal.reason ?? new Error("aborted");
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => { signal.removeEventListener("abort", onAbort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", onAbort); reject(error); },
+    );
+  });
+}
+
 function mapBefore(result: DecisionProviderResult): "allow" | "deny" | "ask" {
   if (result.action === "deny" || result.action === "reject") return "deny";
   if (result.action === "ask" || result.action === "uncertain") return "ask";
@@ -111,14 +123,14 @@ export class ReviewRuntime {
 
     const timed = timeoutSignal(parent, reviewer.timeoutMs ?? this.#defaultTimeoutMs);
     try {
-      if (!(await provider.isAvailable())) return this.#beforeFailure(reviewer, "provider_unavailable", started);
-      const decision = await provider.decide({
+      if (!(await raceWithAbort(provider.isAvailable(), timed.signal))) return this.#beforeFailure(reviewer, "provider_unavailable", started);
+      const decision = await raceWithAbort(provider.decide({
         phase: "before",
         toolCallId: call.toolCallId,
         toolName: call.toolName,
         input: call.input,
         signal: timed.signal,
-      });
+      }), timed.signal);
       const action = mapBefore(decision);
       return {
         reviewerId: reviewer.id,
@@ -162,15 +174,15 @@ export class ReviewRuntime {
 
     const timed = timeoutSignal(parent, reviewer.timeoutMs ?? this.#defaultTimeoutMs);
     try {
-      if (!(await provider.isAvailable())) return this.#afterFailure(reviewer, "provider_unavailable", started);
-      const decision = await provider.decide({
+      if (!(await raceWithAbort(provider.isAvailable(), timed.signal))) return this.#afterFailure(reviewer, "provider_unavailable", started);
+      const decision = await raceWithAbort(provider.decide({
         phase: "after",
         toolCallId: call.toolCallId,
         toolName: call.toolName,
         input: call.input,
         result,
         signal: timed.signal,
-      });
+      }), timed.signal);
       const status = mapAfter(decision);
       return {
         reviewerId: reviewer.id,
