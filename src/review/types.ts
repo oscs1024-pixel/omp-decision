@@ -43,8 +43,9 @@ export interface ReviewFinding {
 export interface ReviewerResult {
   reviewerId: string;
   reviewerName: string;
+  provider: string;
   phase: "before" | "after";
-  status: "allowed" | "denied" | "asked" | "passed" | "rejected" | "failed" | "skipped";
+  status: "allowed" | "denied" | "asked" | "passed" | "rejected" | "uncertain" | "failed" | "skipped";
   reasonCode: string;
   reason?: string | undefined;
   confidence?: number | undefined;
