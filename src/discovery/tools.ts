@@ -2,6 +2,13 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
  import { DiscoveryRuntime, defaultSkillRoots } from "./runtime.js";
 
  
+function formatToolSource(sourceInfo: unknown): string | undefined {
+  if (!sourceInfo || typeof sourceInfo !== "object") return undefined;
+  const source = sourceInfo as Record<string, unknown>;
+  for (const key of ["source", "type", "path", "name"]) if (typeof source[key] === "string") return source[key] as string;
+  return undefined;
+}
+
 function result(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }], details: value };
 }
@@ -17,7 +24,7 @@ export function registerDiscoveryTools(pi: ExtensionAPI): void {
   const runtime = new DiscoveryRuntime({
     list: () => pi.getAllTools()
       .filter((tool) => !["decision_find_tools", "decision_find_skill", "decision_activate_tools"].includes(tool.name))
-      .map((tool) => ({ name: tool.name, description: tool.description, source: tool.sourceInfo.source, active: pi.getActiveTools().includes(tool.name) })),
+      .map((tool) => ({ name: tool.name, description: tool.description, source: formatToolSource(tool.sourceInfo), active: pi.getActiveTools().includes(tool.name) })),
   });
 
   pi.registerTool({
