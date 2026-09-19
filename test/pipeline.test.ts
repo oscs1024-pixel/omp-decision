@@ -206,6 +206,29 @@ test("VerifyStage: reselects reviewers using actual changed files", async () => 
   assert.equal(result.reviewers[0]?.reviewerId, "actual");
 });
 
+test("VerifyStage: rejects undeclared workspace mutations before semantic review", async () => {
+  const providers = new DecisionProviderRegistry();
+  let providerCalls = 0;
+  providers.register(new FakeDecisionProvider(() => {
+    providerCalls++;
+    return { action: "pass", reasonCode: "verified" };
+  }));
+  const review = new ReviewRuntime(providers, 1000);
+  const stage = new VerifyStage(review, 24000, 16000);
+  const context = {
+    toolCallId: "undeclared", call: writeCall,
+    canonicalTargets: ["/workspace/src/index.ts"], relativeTargets: ["src/index.ts"],
+    afterReviewers: [], reviewerConfigs: [],
+    workspaceChanges: { files: ["src/index.ts", ".env"], undeclared: [".env"] },
+    startedAt: Date.now(),
+  };
+  const result = await stage.verify(context, { content: [], details: undefined, isError: false });
+  assert.equal(result.status, "rejected");
+  assert.equal(result.findings?.[0]?.category, "undeclared_mutation");
+  assert.match(result.diagnostic ?? "", /\.env/);
+  assert.equal(providerCalls, 0);
+});
+
 test("TraceEvalStage: records policy, before and after events", () => {
   const entries: unknown[] = [];
   const auditMock = {
