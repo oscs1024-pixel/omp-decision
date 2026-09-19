@@ -19,6 +19,7 @@ export class ExecuteStage {
     afterReviewers: ReviewerConfig[],
     decision?: PipelineDecision,
     gate?: PolicyGateResult,
+    reviewerConfigs: ReviewerConfig[] = afterReviewers,
   ): Promise<{ error?: string; context?: ExecutionContext }> {
     const targets = extractMutationTargets(call.toolName, call.input, call.cwd);
     const resolvedTargets = await Promise.all(targets.map((target) => resolveMutationTarget(call.cwd, target)));
@@ -43,6 +44,7 @@ export class ExecuteStage {
       canonicalTargets,
       relativeTargets,
       afterReviewers,
+      reviewerConfigs,
       decision,
       gate,
       preSnapshots,
