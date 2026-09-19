@@ -1,7 +1,9 @@
+import type { PolicyConfig } from "../policy/types.js";
 import type { ReviewerConfig } from "../review/types.js";
 
 export interface DecisionConfig {
   enabled: boolean;
+  policy: PolicyConfig;
   review: {
     enabled: boolean;
     maxFileContextChars: number;
