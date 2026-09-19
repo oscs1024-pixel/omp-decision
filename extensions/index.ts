@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import { loadDecisionConfig } from "../src/config/loader.js";
+import { PolicyEngine } from "../src/policy/engine.js";
 import { DecisionProviderRegistry } from "../src/providers/registry.js";
 import { ReviewRuntime } from "../src/review/runtime.js";
 import { ToolLifecycleRuntime } from "../src/runtime/lifecycle.js";
@@ -17,6 +18,7 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
       state.loaded.config.review.enabled ? state.loaded.config.review.reviewers : [],
       state.loaded.config.review.maxFileContextChars,
       state.loaded.config.review.maxPayloadChars,
+      new PolicyEngine(state.loaded.config.policy),
     );
   }
 
