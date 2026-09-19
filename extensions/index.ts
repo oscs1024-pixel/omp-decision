@@ -38,6 +38,9 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
         timestamp: Date.now(),
       },
       ctx.signal,
+      ctx.hasUI
+        ? (message) => ctx.ui.confirm("omp-decision review", message, { signal: ctx.signal })
+        : undefined,
     );
   });
 
