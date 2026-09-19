@@ -149,3 +149,20 @@ test("safe policy fast path skips before provider but preserves after lifecycle"
   await lifecycle.after("safe", { content: [], details: undefined, isError: false });
   assert.equal(afterCalls, 1);
 });
+
+test("edit/write lifecycle blocks canonical targets outside workspace", async () => {
+  const { mkdtempSync, symlinkSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "omp-life-boundary-"));
+  const outside = mkdtempSync(join(tmpdir(), "omp-life-outside-"));
+  writeFileSync(join(outside, "a.ts"), "x");
+  symlinkSync(outside, join(root, "linked"), "dir");
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider(() => ({ action: "allow", reasonCode: "ok" })));
+  const lifecycle = new ToolLifecycleRuntime(new ReviewRuntime(providers, 1000), [reviewer]);
+  const blocked = await lifecycle.before({ toolCallId: "escape", toolName: "edit", input: { path: "linked/a.ts" }, cwd: root, timestamp: Date.now() });
+  assert.equal(blocked?.block, true);
+  assert.match(blocked?.reason ?? "", /workspace_boundary/);
+  assert.equal(lifecycle.pending.size, 0);
+});
