@@ -32,15 +32,16 @@ export interface ExecutionContext {
   preSnapshots?: Map<string, FileSnapshot> | undefined;
   canonicalTargets: string[];
   relativeTargets: string[];
+  preflight?: PolicyGateResult | undefined;
   decision?: PipelineDecision | undefined;
-  gate?: PolicyGateResult | undefined;
-  afterReviewers: ReviewerConfig[];
+  decisionGate?: PolicyGateResult | undefined;
+  initialAfterReviewers: ReviewerConfig[];
   reviewerConfigs: ReviewerConfig[];
   startedAt: number;
 }
 
 export interface VerifyResult {
-  status: "passed" | "rejected" | "failed" | "skipped";
+  status: "passed" | "rejected" | "uncertain" | "failed" | "skipped";
   reviewers: ReviewerResult[];
   findings?: ReviewFinding[] | undefined;
   diagnostic?: string | undefined;
