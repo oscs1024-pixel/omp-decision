@@ -1,4 +1,5 @@
 import type { DiffBundle, FileSnapshot } from "../diff/types.js";
+import type { WorkspaceBaseline, WorkspaceChanges } from "../diff/workspace-changes.js";
 import type { PolicyDecision } from "../policy/types.js";
 import type { ReviewFinding, ReviewerConfig, ReviewerResult, ToolCall } from "../review/types.js";
 
@@ -30,6 +31,8 @@ export interface ExecutionContext {
   toolCallId: string;
   call: ToolCall;
   preSnapshots?: Map<string, FileSnapshot> | undefined;
+  workspaceBaseline?: WorkspaceBaseline | undefined;
+  workspaceChanges?: WorkspaceChanges | undefined;
   canonicalTargets: string[];
   relativeTargets: string[];
   decision?: PipelineDecision | undefined;
