@@ -86,7 +86,10 @@ function parsePolicyRules(value: unknown, source: string, warnings: string[]): P
     if (!id || tools.length === 0 || !action || !reason || seen.has(id)) { warnings.push(`${source}: invalid or duplicate policy.rules[${index}]`); return; }
     seen.add(id);
     const rule: PolicyRule = { id, tools, action, reason, enabled: item.enabled !== false };
-    if (typeof item.commandPattern === "string") rule.commandPattern = item.commandPattern;
+    if (typeof item.commandPattern === "string") {
+      try { new RegExp(item.commandPattern, "i"); rule.commandPattern = item.commandPattern; }
+      catch (error) { warnings.push(`${source}: policy.rules[${index}].commandPattern is invalid: ${error instanceof Error ? error.message : String(error)}`); return; }
+    }
     rules.push(rule);
   });
   return rules;
