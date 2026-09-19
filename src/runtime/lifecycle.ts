@@ -95,7 +95,12 @@ export class ToolLifecycleRuntime {
     const relativeTargets = targets.map((t) => relative(call.cwd, t).replace(/\\/g, "/"));
     const afterReviewers = this.#review.select(this.#reviewers, call.toolName, "after", relativeTargets);
 
-    const prep = await this.executeStage.prepare(call, afterReviewers, undefined, preflight, this.#reviewers);
+    const prep = await this.executeStage.prepare({
+      call,
+      initialAfterReviewers: afterReviewers,
+      reviewerConfigs: this.#reviewers,
+      preflight,
+    });
     if (prep.error) {
       return { block: true, reason: prep.error };
     }
@@ -110,7 +115,7 @@ export class ToolLifecycleRuntime {
       // Stage 3: gate the semantic decision
       const gateResult = this.policyGate.evaluateDecisionGate(call, decision);
       execContext.decision = decision;
-      execContext.gate = gateResult;
+      execContext.decisionGate = gateResult;
       if (gateResult.verdict === "deny" || gateResult.verdict === "stop") {
         return { block: true, reason: gateResult.reason ?? decision.reason ?? "omp-decision blocked this tool call" };
       }
@@ -148,7 +153,7 @@ export class ToolLifecycleRuntime {
         reason: decision?.reason,
         reviewers: decision?.reviewers ?? [],
       },
-      afterReviewers: execContext.afterReviewers,
+      afterReviewers: execContext.initialAfterReviewers,
       ...(execContext.preSnapshots ? { snapshots: execContext.preSnapshots } : {}),
     });
 
