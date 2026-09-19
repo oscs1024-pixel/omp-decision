@@ -98,7 +98,8 @@ test("after uncertain decision remains distinct from provider failure", async ()
   providers.register(new FakeDecisionProvider(() => ({ action: "uncertain", reasonCode: "low-confidence", reason: "not enough evidence" })));
   const runtime = new ReviewRuntime(providers, 1000);
   const outcome = await runtime.after(call, { content: [], details: undefined, isError: false }, [reviewer({ trigger: "after", failureMode: "open" })]);
-  assert.equal(outcome.status, "failed");
+  assert.equal(outcome.status, "uncertain");
+  assert.match(outcome.diagnostic ?? "", /review uncertain/);
   assert.equal(outcome.reviewers[0]?.status, "uncertain");
   assert.equal(outcome.reviewers[0]?.reasonCode, "low-confidence");
   assert.match(outcome.reviewers[0]?.reason ?? "", /not enough evidence/);
