@@ -9,6 +9,9 @@ export interface DecisionProviderRequest {
     content: unknown[];
     details: unknown;
     isError: boolean;
+    reviewContext?: {
+      diff?: import("../diff/types.js").DiffBundle;
+    };
   };
   signal?: AbortSignal;
 }
