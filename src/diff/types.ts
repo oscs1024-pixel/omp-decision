@@ -5,6 +5,8 @@ export interface FileSnapshot {
   truncated: boolean;
   fullContent?: string;
   readError?: string;
+  binary?: boolean;
+  oversized?: boolean;
 }
 
 export interface FileDiff {
