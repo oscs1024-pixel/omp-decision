@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { PolicyAction, PolicyRule } from "../policy/types.js";
 import type { FailureMode, ReviewerConfig, ReviewTrigger } from "../review/types.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
 import type { DecisionConfig, LoadedDecisionConfig } from "./types.js";
@@ -65,17 +66,45 @@ function parseReviewers(value: unknown, source: string, warnings: string[]): Rev
   });
 }
 
+function parsePolicyRules(value: unknown, source: string, warnings: string[]): PolicyRule[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) { warnings.push(`${source}: policy.rules must be an array`); return undefined; }
+  const rules: PolicyRule[] = [];
+  const seen = new Set<string>();
+  value.forEach((item, index) => {
+    if (!isRecord(item)) { warnings.push(`${source}: policy.rules[${index}] must be an object`); return; }
+    const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : undefined;
+    const tools = Array.isArray(item.tools) ? item.tools.filter((tool): tool is string => typeof tool === "string" && tool.length > 0) : [];
+    const action: PolicyAction | undefined = item.action === "allow" || item.action === "deny" || item.action === "ask" ? item.action : undefined;
+    const reason = typeof item.reason === "string" && item.reason.trim() ? item.reason.trim() : undefined;
+    if (!id || tools.length === 0 || !action || !reason || seen.has(id)) { warnings.push(`${source}: invalid or duplicate policy.rules[${index}]`); return; }
+    seen.add(id);
+    const rule: PolicyRule = { id, tools, action, reason, enabled: item.enabled !== false };
+    if (typeof item.commandPattern === "string") rule.commandPattern = item.commandPattern;
+    rules.push(rule);
+  });
+  return rules;
+}
+
 function applyConfig(base: DecisionConfig, raw: unknown, source: string, warnings: string[]): DecisionConfig {
   if (!isRecord(raw)) {
     warnings.push(`${source}: root must be a JSON object`);
     return base;
   }
+  const policy = isRecord(raw.policy) ? raw.policy : undefined;
+  if (raw.policy !== undefined && !policy) warnings.push(`${source}: policy must be an object`);
+  const policyRules = parsePolicyRules(policy?.rules, source, warnings);
   const review = isRecord(raw.review) ? raw.review : undefined;
   if (raw.review !== undefined && !review) warnings.push(`${source}: review must be an object`);
   const reviewers = parseReviewers(review?.reviewers, source, warnings);
 
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
+    policy: {
+      enabled: typeof policy?.enabled === "boolean" ? policy.enabled : base.policy.enabled,
+      builtinRules: typeof policy?.builtinRules === "boolean" ? policy.builtinRules : base.policy.builtinRules,
+      rules: policyRules ?? base.policy.rules.map((rule) => ({ ...rule, tools: [...rule.tools] })),
+    },
     review: {
       enabled: typeof review?.enabled === "boolean" ? review.enabled : base.review.enabled,
       maxFileContextChars: positiveInteger(review?.maxFileContextChars, base.review.maxFileContextChars, `${source}: review.maxFileContextChars`, warnings),
@@ -101,6 +130,7 @@ export function loadDecisionConfig(cwd: string, home = homedir()): LoadedDecisio
   const sources: string[] = [];
   let config: DecisionConfig = {
     enabled: DEFAULT_CONFIG.enabled,
+    policy: { ...DEFAULT_CONFIG.policy, rules: [] },
     review: { ...DEFAULT_CONFIG.review, reviewers: [] },
   };
   const paths = [join(home, ".omp", "decision", "config.json"), join(cwd, ".omp", "decision.json")];
