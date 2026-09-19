@@ -75,3 +75,26 @@ test("review timeout completes even when provider ignores AbortSignal", async ()
   assert.equal(outcome.reviewers[0]?.reasonCode, "provider_aborted_or_timeout");
   assert.ok(Date.now() - started < 500);
 });
+
+test("after provider failure obeys open and closed failure modes", async () => {
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider(() => { throw new Error("boom"); }));
+  const runtime = new ReviewRuntime(providers, 1000);
+  const result = { content: [], details: undefined, isError: false };
+  const open = await runtime.after(call, result, [reviewer({ trigger: "after", failureMode: "open" })]);
+  assert.equal(open.status, "passed");
+  assert.equal(open.reviewers[0]?.reasonCode, "provider_error");
+  const closed = await runtime.after(call, result, [reviewer({ trigger: "after", failureMode: "closed" })]);
+  assert.equal(closed.status, "rejected");
+  assert.match(closed.diagnostic ?? "", /boom/);
+});
+
+test("after uncertain decision is resolved through failureMode", async () => {
+  const providers = new DecisionProviderRegistry();
+  providers.register(new FakeDecisionProvider(() => ({ action: "uncertain", reasonCode: "low-confidence", reason: "not enough evidence" })));
+  const runtime = new ReviewRuntime(providers, 1000);
+  const outcome = await runtime.after(call, { content: [], details: undefined, isError: false }, [reviewer({ trigger: "after", failureMode: "closed" })]);
+  assert.equal(outcome.status, "rejected");
+  assert.equal(outcome.reviewers[0]?.reasonCode, "provider_uncertain");
+  assert.match(outcome.diagnostic ?? "", /not enough evidence/);
+});
