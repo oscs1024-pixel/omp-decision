@@ -89,7 +89,7 @@ test("ExecuteStage: validates workspace boundary and manages pending contexts", 
   const stage = new ExecuteStage(16000);
 
   // Normal relative target
-  const prep = await stage.prepare(writeCall, []);
+  const prep = await stage.prepare({ call: writeCall, initialAfterReviewers: [] });
   assert.equal(prep.error, undefined);
   assert.ok(prep.context);
 
@@ -100,7 +100,7 @@ test("ExecuteStage: validates workspace boundary and manages pending contexts", 
   assert.equal(stage.size, 0);
 
   // Escaping target
-  const escape = await stage.prepare({ ...writeCall, input: { path: "../../../outside.ts" } }, []);
+  const escape = await stage.prepare({ call: { ...writeCall, input: { path: "../../../outside.ts" } }, initialAfterReviewers: [] });
   assert.match(escape.error ?? "", /workspace_boundary/);
 });
 
@@ -127,7 +127,7 @@ test("VerifyStage: skips when tool failed and verifies successful diffs", async 
     call: writeCall,
     canonicalTargets: ["/workspace/src/index.ts"],
     relativeTargets: ["src/index.ts"],
-    afterReviewers: [reviewer],
+    initialAfterReviewers: [reviewer],
     reviewerConfigs: [reviewer],
     startedAt: Date.now(),
   };
@@ -168,7 +168,7 @@ test("VerifyStage: no changes detected is explicitly skipped", async () => {
     call: writeCall,
     canonicalTargets: ["/workspace/a.ts"],
     relativeTargets: ["a.ts"],
-    afterReviewers: [reviewer],
+    initialAfterReviewers: [reviewer],
     reviewerConfigs: [reviewer],
     preSnapshots: pre,
     startedAt: Date.now(),
@@ -198,7 +198,7 @@ test("VerifyStage: reselects reviewers using actual changed files", async () => 
   const post = new Map([[path, { path, exists: true, content: "export const x = 2;\n", truncated: false }]]);
   const context = {
     toolCallId: "actual-diff", call: writeCall, canonicalTargets: [path], relativeTargets: ["declared.txt"],
-    afterReviewers: [], reviewerConfigs: [actualReviewer], preSnapshots: pre, startedAt: Date.now(),
+    initialAfterReviewers: [], reviewerConfigs: [actualReviewer], preSnapshots: pre, startedAt: Date.now(),
   };
   const result = await stage.verify(context, { content: [], details: undefined, isError: false }, post);
   assert.equal(result.status, "passed");
