@@ -45,7 +45,10 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_result", async (event: ToolResultEvent, ctx) => {
-    if (!state.enabled || !state.loaded.config.review.enabled) return;
+    if (!state.enabled || !state.loaded.config.review.enabled) {
+      lifecycle.discard(event.toolCallId);
+      return;
+    }
     const replacement = await lifecycle.after(
       event.toolCallId,
       { content: event.content, details: event.details, isError: event.isError },
