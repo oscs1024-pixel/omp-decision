@@ -3,12 +3,14 @@ import { resolveMutationTarget } from "../diff/boundary.js";
 import { SnapshotManager } from "../diff/snapshot.js";
 import { extractMutationTargets } from "../diff/targets.js";
 import type { FileSnapshot } from "../diff/types.js";
+import { WorkspaceChangeDetector } from "../diff/workspace-changes.js";
 import type { ReviewerConfig, ToolCall } from "../review/types.js";
 import type { ExecutionContext, PipelineDecision, PolicyGateResult } from "./types.js";
 
 export class ExecuteStage {
   readonly #snapshots: SnapshotManager;
   readonly #pending = new Map<string, ExecutionContext>();
+  readonly #workspaceChanges = new WorkspaceChangeDetector();
 
   constructor(maxFileContextChars = 16_000) {
     this.#snapshots = new SnapshotManager(maxFileContextChars);
@@ -39,6 +41,8 @@ export class ExecuteStage {
       ? await this.#snapshots.captureMany(canonicalTargets)
       : undefined;
 
+    const workspaceBaseline = await this.#workspaceChanges.capture(call.cwd);
+
     const context: ExecutionContext = {
       toolCallId: call.toolCallId,
       call,
@@ -48,6 +52,7 @@ export class ExecuteStage {
       reviewerConfigs,
       preflight,
       preSnapshots,
+      workspaceBaseline,
       startedAt: Date.now(),
     };
 
@@ -55,6 +60,7 @@ export class ExecuteStage {
   }
 
   async capturePost(context: ExecutionContext): Promise<Map<string, FileSnapshot> | undefined> {
+    context.workspaceChanges = await this.#workspaceChanges.detect(context.workspaceBaseline, context.relativeTargets);
     if (!context.preSnapshots || context.preSnapshots.size === 0) return undefined;
     return this.#snapshots.captureMany([...context.preSnapshots.keys()]);
   }
