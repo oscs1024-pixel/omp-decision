@@ -71,6 +71,10 @@ export class ToolLifecycleRuntime {
     };
   }
 
+  discard(toolCallId: string): void {
+    this.pending.delete(toolCallId);
+  }
+
   clear(): void {
     this.pending.clear();
   }
