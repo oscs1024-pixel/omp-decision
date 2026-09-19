@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
+import { AuditRecorder } from "../src/audit/recorder.js";
+import { InMemoryAuditStore } from "../src/audit/store.js";
 import { loadDecisionConfig } from "../src/config/loader.js";
 import { PolicyEngine } from "../src/policy/engine.js";
 import { JevDecisionProvider } from "../src/providers/jev/provider.js";
@@ -10,6 +12,8 @@ import { registerDecisionCommands } from "../src/ui/commands.js";
 
 export default function ompDecisionExtension(pi: ExtensionAPI): void {
   const state = createRuntimeState(loadDecisionConfig(process.cwd()));
+  const auditStore = new InMemoryAuditStore();
+  const audit = new AuditRecorder(auditStore);
   let providers = createProviders();
   let lifecycle = createLifecycle();
 
@@ -26,11 +30,13 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
       state.loaded.config.review.maxFileContextChars,
       state.loaded.config.review.maxPayloadChars,
       new PolicyEngine(state.loaded.config.policy),
+      audit,
     );
   }
 
   pi.on("session_start", (_event, ctx) => {
     lifecycle.clear();
+    audit.startSession();
     reloadRuntimeState(state, loadDecisionConfig(ctx.cwd));
     providers = createProviders();
     lifecycle = createLifecycle();
@@ -77,5 +83,5 @@ export default function ompDecisionExtension(pi: ExtensionAPI): void {
   pi.on("agent_end", () => lifecycle.clear());
   pi.on("session_shutdown", () => lifecycle.clear());
 
-  registerDecisionCommands(pi, state);
+  registerDecisionCommands(pi, state, auditStore);
 }
