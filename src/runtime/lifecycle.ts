@@ -13,6 +13,8 @@ export interface AfterLifecycleResult {
   isError?: boolean;
 }
 
+export type ConfirmationHandler = (message: string) => Promise<boolean>;
+
 export class ToolLifecycleRuntime {
   readonly pending = new PendingToolCallStore();
   readonly #review: ReviewRuntime;
@@ -27,14 +29,24 @@ export class ToolLifecycleRuntime {
     this.#reviewers = reviewers;
   }
 
-  async before(call: ToolCall, signal?: AbortSignal): Promise<BeforeLifecycleResult | undefined> {
+  async before(
+    call: ToolCall,
+    signal?: AbortSignal,
+    confirm?: ConfirmationHandler,
+  ): Promise<BeforeLifecycleResult | undefined> {
     const beforeOutcome = await this.#review.before(call, this.#reviewers, signal);
     if (beforeOutcome.action === "deny") {
       return { block: true, reason: beforeOutcome.reason ?? "omp-decision blocked this tool call" };
     }
 
     if (beforeOutcome.action === "ask") {
-      return { block: true, reason: beforeOutcome.reason ?? "omp-decision requires confirmation; interactive confirmation is not configured yet" };
+      if (!confirm) {
+        return { block: true, reason: beforeOutcome.reason ?? "omp-decision requires interactive confirmation" };
+      }
+      const approved = await confirm(beforeOutcome.reason ?? `Allow ${call.toolName}?`);
+      if (!approved) {
+        return { block: true, reason: "User denied omp-decision confirmation" };
+      }
     }
 
     this.pending.set({
