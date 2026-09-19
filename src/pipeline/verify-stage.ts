@@ -24,6 +24,18 @@ export class VerifyStage {
   ): Promise<VerifyResult> {
     const started = performance.now();
 
+    const undeclared = context.workspaceChanges?.undeclared ?? [];
+    if (undeclared.length > 0) {
+      const diagnostic = `[omp-decision: undeclared mutation]\n\nTool: ${context.call.toolName}\nUndeclared files: ${undeclared.join(", ")}\n\nRequired action:\nInspect and explicitly account for these side effects before continuing.`;
+      return {
+        status: "rejected",
+        reviewers: [],
+        findings: undeclared.map((path) => ({ severity: "error" as const, category: "undeclared_mutation", message: `Tool changed undeclared file: ${path}`, path })),
+        diagnostic,
+        durationMs: Math.round(performance.now() - started),
+      };
+    }
+
     if (result.isError) {
       return {
         status: "skipped",
