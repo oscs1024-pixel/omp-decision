@@ -10,6 +10,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function probability(value: unknown, fallback: number, path: string, warnings: string[]): number {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1) return value;
+  if (value !== undefined) warnings.push(`${path} must be between 0 and 1; using ${fallback}`);
+  return fallback;
+}
+
 function positiveInteger(value: unknown, fallback: number, path: string, warnings: string[]): number {
   if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
   if (value !== undefined) warnings.push(`${path} must be a positive integer; using ${fallback}`);
@@ -91,6 +97,9 @@ function applyConfig(base: DecisionConfig, raw: unknown, source: string, warning
     warnings.push(`${source}: root must be a JSON object`);
     return base;
   }
+  const providers = isRecord(raw.providers) ? raw.providers : undefined;
+  const jev = providers && isRecord(providers.jev) ? providers.jev : undefined;
+  if (raw.providers !== undefined && !providers) warnings.push(`${source}: providers must be an object`);
   const policy = isRecord(raw.policy) ? raw.policy : undefined;
   if (raw.policy !== undefined && !policy) warnings.push(`${source}: policy must be an object`);
   const policyRules = parsePolicyRules(policy?.rules, source, warnings);
@@ -100,6 +109,14 @@ function applyConfig(base: DecisionConfig, raw: unknown, source: string, warning
 
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
+    providers: {
+      jev: {
+        enabled: typeof jev?.enabled === "boolean" ? jev.enabled : base.providers.jev.enabled,
+        allowThreshold: probability(jev?.allowThreshold, base.providers.jev.allowThreshold, `${source}: providers.jev.allowThreshold`, warnings),
+        denyThreshold: probability(jev?.denyThreshold, base.providers.jev.denyThreshold, `${source}: providers.jev.denyThreshold`, warnings),
+        ...(typeof jev?.model === "string" && jev.model.trim() ? { model: jev.model.trim() } : base.providers.jev.model ? { model: base.providers.jev.model } : {}),
+      },
+    },
     policy: {
       enabled: typeof policy?.enabled === "boolean" ? policy.enabled : base.policy.enabled,
       builtinRules: typeof policy?.builtinRules === "boolean" ? policy.builtinRules : base.policy.builtinRules,
@@ -130,6 +147,7 @@ export function loadDecisionConfig(cwd: string, home = homedir()): LoadedDecisio
   const sources: string[] = [];
   let config: DecisionConfig = {
     enabled: DEFAULT_CONFIG.enabled,
+    providers: { jev: { ...DEFAULT_CONFIG.providers.jev } },
     policy: { ...DEFAULT_CONFIG.policy, rules: [] },
     review: { ...DEFAULT_CONFIG.review, reviewers: [] },
   };
