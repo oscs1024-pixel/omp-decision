@@ -1,4 +1,4 @@
-import { relative } from "node:path";
+import { relative, resolve } from "node:path";
 import { resolveMutationTarget } from "../diff/boundary.js";
 import { SnapshotManager } from "../diff/snapshot.js";
 import { extractMutationTargets } from "../diff/targets.js";
@@ -61,8 +61,10 @@ export class ExecuteStage {
 
   async capturePost(context: ExecutionContext): Promise<Map<string, FileSnapshot> | undefined> {
     context.workspaceChanges = await this.#workspaceChanges.detect(context.workspaceBaseline, context.relativeTargets);
-    if (!context.preSnapshots || context.preSnapshots.size === 0) return undefined;
-    return this.#snapshots.captureMany([...context.preSnapshots.keys()]);
+    const paths = new Set(context.preSnapshots ? [...context.preSnapshots.keys()] : []);
+    for (const relativePath of context.workspaceChanges?.files ?? []) paths.add(resolve(context.call.cwd, relativePath));
+    if (paths.size === 0) return undefined;
+    return this.#snapshots.captureMany([...paths]);
   }
 
   save(context: ExecutionContext): void {
