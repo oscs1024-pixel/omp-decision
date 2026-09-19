@@ -22,6 +22,7 @@ export class SnapshotManager {
         exists: true,
         content: truncated ? normalized.slice(0, this.#maxChars) : normalized,
         truncated,
+        ...(truncated ? { fullContent: normalized } : {}),
       };
     } catch (error) {
       if (isEnoent(error)) return { path, exists: false, content: "", truncated: false };
