@@ -95,10 +95,10 @@ export function createFileDiff(before: FileSnapshot, after: FileSnapshot): FileD
     : complete && before.exists === after.exists && beforeText === afterText ? "unchanged"
     : "modified";
 
-  if (kind === "unchanged") return { path: after.path, kind, before, after, unifiedDiff: "", truncated: before.truncated || after.truncated };
+  if (kind === "unchanged") return { path: after.path, kind, before: publicSnapshot(before), after: publicSnapshot(after), unifiedDiff: "", truncated: before.truncated || after.truncated };
   if (kind === "unavailable") {
     const message = `# diff unavailable: ${before.readError ?? after.readError ?? "unknown error"}`;
-    return { path: after.path, kind, before, after, unifiedDiff: message, truncated: false };
+    return { path: after.path, kind, before: publicSnapshot(before), after: publicSnapshot(after), unifiedDiff: message, truncated: false };
   }
 
   const oldName = before.exists ? `a/${basename(before.path)}` : "/dev/null";
