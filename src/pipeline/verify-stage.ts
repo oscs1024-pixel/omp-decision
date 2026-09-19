@@ -30,6 +30,7 @@ export class VerifyStage {
         reviewers: context.afterReviewers.map((r) => ({
           reviewerId: r.id,
           reviewerName: r.name,
+          provider: r.provider,
           phase: "after",
           status: "skipped",
           reasonCode: "tool_failed",
@@ -58,14 +59,15 @@ export class VerifyStage {
       };
       if (diff.files.length > 0 && diff.files.every((f) => f.kind === "unchanged")) {
         return {
-          status: "passed",
+          status: "skipped",
           reviewers: context.afterReviewers.map((r) => ({
             reviewerId: r.id,
             reviewerName: r.name,
+            provider: r.provider,
             phase: "after",
-            status: "passed",
+            status: "skipped",
             reasonCode: "no_changes_detected",
-            reason: "No actual filesystem changes detected",
+            reason: "No actual filesystem changes detected; post-change review was not run",
             durationMs: Math.round(performance.now() - started),
           })),
           diff,
@@ -78,7 +80,7 @@ export class VerifyStage {
     const outcome = await this.#review.after(
       context.call,
       enriched,
-      context.afterReviewers,
+      context.reviewerConfigs,
       signal,
       changedFiles,
     );
