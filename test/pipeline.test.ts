@@ -218,7 +218,7 @@ test("VerifyStage: rejects undeclared workspace mutations before semantic review
   const context = {
     toolCallId: "undeclared", call: writeCall,
     canonicalTargets: ["/workspace/src/index.ts"], relativeTargets: ["src/index.ts"],
-    afterReviewers: [], reviewerConfigs: [],
+    initialAfterReviewers: [], reviewerConfigs: [],
     workspaceChanges: { files: ["src/index.ts", ".env"], undeclared: [".env"] },
     startedAt: Date.now(),
   };
