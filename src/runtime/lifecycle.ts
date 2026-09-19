@@ -1,3 +1,4 @@
+import type { AuditRecorder } from "../audit/recorder.js";
 import { createDiffBundle } from "../diff/unified.js";
 import { SnapshotManager } from "../diff/snapshot.js";
 import { extractMutationTargets } from "../diff/targets.js";
@@ -26,6 +27,7 @@ export class ToolLifecycleRuntime {
   readonly #snapshots: SnapshotManager;
   readonly #maxPayloadChars: number;
   readonly #policy?: PolicyEngine;
+  readonly #audit?: AuditRecorder;
 
   constructor(
     review: ReviewRuntime,
@@ -33,12 +35,14 @@ export class ToolLifecycleRuntime {
     maxFileContextChars = 16_000,
     maxPayloadChars = 24_000,
     policy?: PolicyEngine,
+    audit?: AuditRecorder,
   ) {
     this.#review = review;
     this.#reviewers = reviewers;
     this.#snapshots = new SnapshotManager(maxFileContextChars);
     this.#maxPayloadChars = maxPayloadChars;
     this.#policy = policy;
+    this.#audit = audit;
   }
 
   setReviewers(reviewers: ReviewerConfig[]): void {
@@ -51,6 +55,7 @@ export class ToolLifecycleRuntime {
     confirm?: ConfirmationHandler,
   ): Promise<BeforeLifecycleResult | undefined> {
     const policy = this.#policy?.evaluate(call);
+    if (policy) this.#audit?.policy(call, policy);
     if (policy?.action === "deny") return { block: true, reason: `[${policy.reasonCode}] ${policy.reason}` };
     if (policy?.action === "ask") {
       if (!confirm) return { block: true, reason: policy.reason };
@@ -60,6 +65,7 @@ export class ToolLifecycleRuntime {
     const beforeOutcome = policy?.action === "allow"
       ? { action: "allow" as const, reviewers: [] }
       : await this.#review.before(call, this.#reviewers, signal);
+    this.#audit?.before(call, beforeOutcome);
     if (beforeOutcome.action === "deny") {
       return { block: true, reason: beforeOutcome.reason ?? "omp-decision blocked this tool call" };
     }
@@ -98,11 +104,12 @@ export class ToolLifecycleRuntime {
     }
 
     const outcome = await this.#review.after(pending.call, enriched, pending.afterReviewers, signal);
+    const audit = this.#audit?.after(pending.call, enriched, outcome);
     if (!outcome.diagnostic) return undefined;
 
     return {
       content: [...result.content, { type: "text", text: outcome.diagnostic }],
-      details: mergeDetails(result.details, { ompDecision: outcome }),
+      details: mergeDetails(result.details, { ompDecision: { ...outcome, auditId: audit?.id } }),
       isError: result.isError,
     };
   }
