@@ -16,6 +16,8 @@ Implementation follows staged delivery:
 
 Phase 1 establishes the OMP extension entrypoint, layered configuration, session state, and `/decision status|on|off`.\n\nPhase 2 adds the `tool_call -> PendingToolCall -> tool_result` lifecycle, selected-tool reviewer matching, provider abstraction, parallel before/after review, timeout/cancellation handling, failure modes, and agent-visible rejection diagnostics. The real Jev provider is intentionally deferred.
 
+Phase 3 adds diff-aware after-review for `edit` and `write`: filesystem targets are snapshotted immediately before execution, captured again after successful execution, normalized for CRLF/LF, converted to bounded unified diffs, and attached to the provider's `result.reviewContext.diff`. New/deleted/unchanged files, Unicode, multi-target edits, read failures, and payload truncation are represented explicitly.
+
 ## Configuration
 
 User configuration:
