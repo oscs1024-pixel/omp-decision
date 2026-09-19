@@ -62,7 +62,7 @@ export interface BeforeReviewOutcome {
 }
 
 export interface AfterReviewOutcome {
-  status: "passed" | "rejected" | "failed" | "skipped";
+  status: "passed" | "rejected" | "uncertain" | "failed" | "skipped";
   reviewers: ReviewerResult[];
   diagnostic?: string | undefined;
 }
