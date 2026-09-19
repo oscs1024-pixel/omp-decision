@@ -106,6 +106,7 @@ export class ReviewRuntime {
         reviewers: selected.map((reviewer) => ({
           reviewerId: reviewer.id,
           reviewerName: reviewer.name,
+          provider: reviewer.provider,
           phase: "after",
           status: "skipped",
           reasonCode: "tool_failed",
@@ -121,7 +122,7 @@ export class ReviewRuntime {
     if (rejected.length) {
       return { status: "rejected", reviewers: results, diagnostic: this.#diagnostic(call, rejected, files) };
     }
-    if (results.some((entry) => entry.status === "failed")) return { status: "failed", reviewers: results };
+    if (results.some((entry) => entry.status === "failed" || entry.status === "uncertain")) return { status: "failed", reviewers: results };
     return { status: "passed", reviewers: results };
   }
 
@@ -147,6 +148,7 @@ export class ReviewRuntime {
       return {
         reviewerId: reviewer.id,
         reviewerName: reviewer.name,
+        provider: reviewer.provider,
         phase: "before",
         status: action === "allow" ? "allowed" : action === "deny" ? "denied" : "asked",
         reasonCode: decision.reasonCode,
@@ -169,6 +171,7 @@ export class ReviewRuntime {
     return {
       reviewerId: reviewer.id,
       reviewerName: reviewer.name,
+      provider: reviewer.provider,
       phase: "before",
       status: action === "allow" ? "allowed" : action === "deny" ? "denied" : "asked",
       reasonCode: code,
@@ -202,11 +205,27 @@ export class ReviewRuntime {
         signal: timed.signal,
       }), timed.signal);
       const mapped = mapAfter(decision);
-      if (mapped === "uncertain") return this.#afterFailure(reviewer, "provider_uncertain", started, decision.reason);
+      if (mapped === "uncertain") {
+        return {
+          reviewerId: reviewer.id,
+          reviewerName: reviewer.name,
+          provider: reviewer.provider,
+          phase: "after",
+          status: "uncertain",
+          reasonCode: decision.reasonCode,
+          ...(decision.reason === undefined ? {} : { reason: decision.reason }),
+          ...(decision.confidence === undefined ? {} : { confidence: decision.confidence }),
+          durationMs: Math.round(performance.now() - started),
+          ...(decision.findings ? { findings: decision.findings } : {}),
+          ...(decision.tokens !== undefined ? { tokens: decision.tokens } : {}),
+          ...(decision.costUsd !== undefined ? { costUsd: decision.costUsd } : {}),
+        };
+      }
       const status = mapped;
       return {
         reviewerId: reviewer.id,
         reviewerName: reviewer.name,
+        provider: reviewer.provider,
         phase: "after",
         status,
         reasonCode: decision.reasonCode,
@@ -229,6 +248,7 @@ export class ReviewRuntime {
     return {
       reviewerId: reviewer.id,
       reviewerName: reviewer.name,
+      provider: reviewer.provider,
       phase: "after",
       status: action === "deny" ? "rejected" : action === "ask" ? "failed" : "passed",
       reasonCode: code,
