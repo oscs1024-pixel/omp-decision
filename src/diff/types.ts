@@ -3,6 +3,7 @@ export interface FileSnapshot {
   exists: boolean;
   content: string;
   truncated: boolean;
+  fullContent?: string;
   readError?: string;
 }
 
